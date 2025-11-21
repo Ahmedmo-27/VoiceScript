@@ -1,0 +1,149 @@
+/* ---------------------- LAYOUT ---------------------- */
+.adm-container {
+  display: flex;
+  height: 100vh;
+  font-family: "Inter", sans-serif;
+  background: #f5f6fa;
+}
+
+/* ---------------------- SIDEBAR ---------------------- */
+.adm-sidebar {
+  width: 260px;
+  background: #ffffff;
+  padding: 30px 20px;
+  border-right: 1px solid #e3e3e3;
+  display: flex;
+  flex-direction: column;
+}
+
+.adm-logo {
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.adm-nav {
+  flex: 1;
+}
+
+.adm-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 6px;
+  font-size: 15px;
+  border-radius: 10px;
+  color: #333;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.adm-link:hover,
+.adm-link.active {
+  background: #f0f3ff;
+  color: #3b57ff;
+}
+
+.adm-collection .chevron {
+  margin-left: auto;
+  opacity: 0.7;
+}
+
+.adm-sub-links span {
+  padding-left: 40px;
+  display: block;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  color: #555;
+  font-size: 14px;
+}
+
+/* PLUS BUTTON */
+.adm-add-btn {
+  background: #f1f1f1;
+  border: none;
+  padding: 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 20px;
+  transition: 0.2s;
+}
+
+.adm-add-btn:hover {
+  background: #e4e4e4;
+}
+
+/* ---------------------- MAIN PANEL ---------------------- */
+.adm-main {
+  flex: 1;
+  padding: 40px 45px;
+  overflow-y: auto;
+}
+
+/* HEADER */
+.adm-header {
+  background: #ffffff;
+  padding: 35px;
+  border-radius: 20px;
+  text-align: center;
+  margin-bottom: 35px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+}
+
+.adm-header h1 {
+  font-size: 48px;
+  font-weight: 800;
+}
+
+.adm-subtitle {
+  margin-top: 8px;
+  font-size: 16px;
+  opacity: 0.6;
+}
+
+/* SECTION TITLE */
+.section-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 18px;
+}
+
+/* USERS LIST */
+.user-list {
+  background: #fff;
+  padding: 30px;
+  border-radius: 20px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+/* USER CARD */
+.user-card {
+  background: #fff;
+  padding: 18px 20px;
+  border-radius: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0px 0px 6px rgba(0,0,0,0.08);
+  margin-bottom: 15px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.user-avatar {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #dcdcdc, #f1f1f1);
+}
+
+.user-date {
+  font-weight: 600;
+  color: #333;
+}
