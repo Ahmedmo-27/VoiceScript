@@ -54,7 +54,7 @@ export default function HomePage() {
           formData.append("audio", wavBlob, "recording.wav");
 
           try {
-            const response = await fetch("http://127.0.0.1:5000/transcribe", {
+            const response = await fetch("http://127.0.0.1:5001/transcribe", {
               method: "POST",
               body: formData,
             });

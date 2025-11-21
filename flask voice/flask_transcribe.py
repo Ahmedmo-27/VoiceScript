@@ -1,3 +1,18 @@
+# Fix for Python 3.13 compatibility - aifc was removed
+import sys
+import os
+import importlib.util
+
+if sys.version_info >= (3, 13):
+    # Inject aifc compatibility module before speech_recognition tries to import it
+    if 'aifc' not in sys.modules:
+        compat_path = os.path.join(os.path.dirname(__file__), 'aifc_compat.py')
+        if os.path.exists(compat_path):
+            spec = importlib.util.spec_from_file_location("aifc", compat_path)
+            aifc_module = importlib.util.module_from_spec(spec)
+            sys.modules['aifc'] = aifc_module
+            spec.loader.exec_module(aifc_module)
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import speech_recognition as sr
@@ -32,4 +47,4 @@ def transcribe():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(port=5001)
