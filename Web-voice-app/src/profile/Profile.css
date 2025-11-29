@@ -1,0 +1,156 @@
+.profile-container {
+  min-height: 100vh;
+  background: #f8f8f8;
+  padding: 40px 20px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  font-family: "Inter", sans-serif;
+}
+
+.profile-loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: #666;
+}
+
+.profile-card {
+  background: #fff;
+  border-radius: 15px;
+  padding: 40px;
+  max-width: 600px;
+  width: 100%;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.profile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #e6e6e6;
+}
+
+.profile-header h1 {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.back-btn {
+  padding: 10px 20px;
+  background: #f1f1f1;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.back-btn:hover {
+  background: #e0e0e0;
+}
+
+.profile-error {
+  background: #fee;
+  color: #c33;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #fcc;
+}
+
+.profile-success {
+  background: #efe;
+  color: #3c3;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #cfc;
+}
+
+.profile-content {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-field label {
+  font-weight: 600;
+  font-size: 14px;
+  color: #555;
+}
+
+.profile-value {
+  padding: 12px 15px;
+  background: #f8f8f8;
+  border-radius: 8px;
+  font-size: 15px;
+  color: #333;
+}
+
+.profile-input {
+  padding: 12px 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.profile-input:focus {
+  border-color: #333;
+}
+
+.profile-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 15px;
+}
+
+.profile-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.edit-btn {
+  background: #333;
+  color: #fff;
+}
+
+.edit-btn:hover {
+  background: #222;
+}
+
+.save-btn {
+  background: #333;
+  color: #fff;
+}
+
+.save-btn:hover {
+  background: #222;
+}
+
+.cancel-btn {
+  background: #e4e4e4;
+  color: #333;
+}
+
+.cancel-btn:hover {
+  background: #d0d0d0;
+}
+
