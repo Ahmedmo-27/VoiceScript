@@ -1,28 +1,33 @@
 """
-Compatibility shim for aifc module removed in Python 3.13
-This provides minimal compatibility for speech_recognition library
+Compatibility module for aifc (removed in Python 3.13).
+This is a minimal stub to allow speech_recognition to work with Python 3.13+.
 """
-import wave
-import struct
 
+import sys
+import struct
+import wave
+
+# Minimal aifc compatibility for speech_recognition
 class Error(Exception):
+    """Base exception for aifc module"""
     pass
 
-def open(f, mode=None):
-    """Minimal aifc.open compatibility"""
-    if mode is None or mode == 'r':
-        return wave.open(f, 'rb')
-    elif mode == 'w':
-        return wave.open(f, 'wb')
-    else:
-        raise ValueError(f"mode must be 'r' or 'w', not {mode}")
-
-# Create minimal compatibility classes
-class Aifc_read:
-    def __init__(self, *args, **kwargs):
-        pass
+def open(file, mode=None):
+    """
+    Compatibility function for aifc.open()
+    Since speech_recognition doesn't actually use aifc for WAV files,
+    we can return a wave.open() object which should work for most cases.
+    """
+    if mode is None:
+        mode = 'rb'
     
-class Aifc_write:
-    def __init__(self, *args, **kwargs):
-        pass
+    # If it's a file-like object (BytesIO), try to use wave module
+    if hasattr(file, 'read'):
+        # For BytesIO objects, wave.open should work
+        return wave.open(file, mode)
+    else:
+        # For file paths, try wave.open
+        return wave.open(file, mode)
 
+# Export minimal interface that speech_recognition might need
+__all__ = ['open', 'Error']

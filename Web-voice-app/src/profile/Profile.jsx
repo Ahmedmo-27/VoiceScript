@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import API_CONFIG from "../config/api";
 import "./Profile.css";
 
 export default function Profile() {
@@ -30,7 +31,7 @@ export default function Profile() {
 
   const fetchUserProfile = async (userId) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/user/${userId}`);
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/user/${userId}`);
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
@@ -84,7 +85,7 @@ export default function Profile() {
         updateData.password = formData.password;
       }
 
-      const response = await fetch(`http://localhost:5001/api/user/${user.id}`, {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/user/${user.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

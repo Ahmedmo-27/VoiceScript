@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiMic, FiHome, FiFileText, FiUser, FiPlus, FiMapPin, FiEdit2, FiTrash2, FiCopy, FiMoon, FiSun, FiTag } from "react-icons/fi";
+import { FiMic, FiHome, FiFileText, FiUser, FiPlus, FiMapPin, FiEdit2, FiTrash2, FiCopy, FiMoon, FiSun, FiTag, FiUpload } from "react-icons/fi";
 import { useTheme } from "../context/ThemeContext";
 import { highlightText } from "../utils/highlightText";
 import VoiceCommandButton from "../components/VoiceCommandButton";
+import API_CONFIG from "../config/api";
 import "./Dashboard.css";
 
 export default function HomePage() {
@@ -26,6 +27,10 @@ export default function HomePage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showCategoryInput, setShowCategoryInput] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+  const [uploadPercentage, setUploadPercentage] = useState(0);
+  const fileInputRef = useRef(null);
 
   // Get user from localStorage
   useEffect(() => {
@@ -44,8 +49,8 @@ export default function HomePage() {
   const fetchNotes = async (userId, categoryId = null) => {
     try {
       const url = categoryId 
-        ? `http://localhost:5001/api/notes/${userId}?categoryId=${categoryId}`
-        : `http://localhost:5001/api/notes/${userId}`;
+        ? `${API_CONFIG.BACKEND_URL}/api/notes/${userId}?categoryId=${categoryId}`
+        : `${API_CONFIG.BACKEND_URL}/api/notes/${userId}`;
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
@@ -63,7 +68,7 @@ export default function HomePage() {
   // Fetch categories from backend
   const fetchCategories = async (userId) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/categories/${userId}`);
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories/${userId}`);
       if (response.ok) {
         const data = await response.json();
         setCategories(data);
@@ -84,7 +89,7 @@ export default function HomePage() {
     if (!newCategoryName.trim() || !user) return;
 
     try {
-      const response = await fetch("http://localhost:5001/api/categories", {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -114,7 +119,7 @@ export default function HomePage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5001/api/notes/search/${userId}?q=${encodeURIComponent(query)}`);
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/search/${userId}?q=${encodeURIComponent(query)}`);
       if (response.ok) {
         const data = await response.json();
         setNotes(data);
@@ -166,8 +171,8 @@ export default function HomePage() {
 
     try {
       const url = editingNote 
-        ? `http://localhost:5001/api/notes/${editingNote.id}`
-        : "http://localhost:5001/api/notes";
+        ? `${API_CONFIG.BACKEND_URL}/api/notes/${editingNote.id}`
+        : `${API_CONFIG.BACKEND_URL}/api/notes`;
       
       const method = editingNote ? "PUT" : "POST";
 
@@ -222,7 +227,7 @@ export default function HomePage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:5001/api/notes/${noteId}`, {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/${noteId}`, {
         method: "DELETE",
       });
 
@@ -242,7 +247,7 @@ export default function HomePage() {
 
   const handlePin = async (note) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/notes/${note.id}`, {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/${note.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -267,7 +272,7 @@ export default function HomePage() {
 
   const handleDuplicate = async (note) => {
     try {
-      const response = await fetch(`http://localhost:5001/api/notes/${note.id}/duplicate`, {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/${note.id}/duplicate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -367,19 +372,29 @@ export default function HomePage() {
           formData.append("audio", wavBlob, "recording.wav");
 
           try {
-            const response = await fetch("http://127.0.0.1:5000/transcribe", {
+            const response = await fetch(`${API_CONFIG.MICROPHONE_SERVICE_URL}/transcribe`, {
               method: "POST",
               body: formData,
             });
+            
             const data = await response.json();
+            
+            if (!response.ok) {
+              console.error("Transcription error:", data);
+              alert(`Transcription error: ${data.error || data.message || "Unknown error"}`);
+              return;
+            }
+            
             if (data.text) {
               setNoteBody(data.text);
             } else if (data.error) {
               alert("Transcription error: " + data.error);
+            } else {
+              alert("Unexpected response from server");
             }
           } catch (err) {
-            console.error(err);
-            alert("Error sending audio to server");
+            console.error("Error sending audio to server:", err);
+            alert(`Error sending audio to server: ${err.message || "Network error"}`);
           }
         };
 
@@ -430,6 +445,246 @@ export default function HomePage() {
       view.setUint8(offset + i, string.charCodeAt(i));
     }
   }
+
+  // Handle file upload
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!user) {
+      alert("User not found. Please login again.");
+      navigate("/login");
+      return;
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      "audio/wav",
+      "audio/mpeg",
+      "audio/mp3",
+      "audio/mp4",
+      "audio/webm",
+      "audio/ogg",
+      "audio/flac",
+      "audio/m4a",
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert("Please upload a valid audio file (WAV, MP3, MP4, WebM, OGG, FLAC, M4A)");
+      return;
+    }
+
+    // Validate file size (16MB limit)
+    if (file.size > 16 * 1024 * 1024) {
+      alert("File size must be less than 16MB");
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress("Preparing upload...");
+    setUploadPercentage(0);
+
+    // Check if file needs conversion (fallback if metadata not available)
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    
+    // Will be updated from server response if available
+    let needsConversion = fileExt !== "wav";
+    let updateInterval = 400;
+    let totalSteps = 20;
+
+    // Fake progress tracker
+    let progressInterval = null;
+    let uploadComplete = false;
+    let currentProgress = 0;
+
+    const updateFakeProgress = (percentage, message) => {
+      currentProgress = Math.min(percentage, 95); // Cap at 95% until response arrives
+      setUploadPercentage(currentProgress);
+      setUploadProgress(message);
+    };
+
+    // Start initial progress
+    updateFakeProgress(5, "Preparing file...");
+
+    // Simulate progress continuously
+    const simulateProgress = () => {
+      let step = 0;
+      const startProgress = 20; // Start processing simulation at 20%
+      const endProgress = 90; // End at 90% until response
+      const progressRange = endProgress - startProgress;
+      const progressPerStep = progressRange / totalSteps;
+      
+      progressInterval = setInterval(() => {
+        if (!uploadComplete) {
+          // Still uploading - wait for XHR progress to handle this
+          return;
+        }
+
+        step++;
+        const progress = startProgress + (step * progressPerStep);
+        
+        // Determine which phase we're in based on progress
+        if (step <= totalSteps * 0.1) {
+          // Initial validation (10% of steps)
+          updateFakeProgress(progress, "File received, validating...");
+        } else if (needsConversion && step <= totalSteps * 0.4) {
+          // Conversion phase (30% of steps if conversion needed)
+          if (step <= totalSteps * 0.2) {
+            updateFakeProgress(progress, "Converting audio to WAV format...");
+          } else if (step <= totalSteps * 0.3) {
+            updateFakeProgress(progress, "Conversion in progress...");
+          } else {
+            updateFakeProgress(progress, "Conversion complete, preparing transcription...");
+          }
+        } else if (step <= totalSteps * 0.85) {
+          // Transcription phase (45-75% of steps)
+          const transcriptionProgress = step - (needsConversion ? totalSteps * 0.4 : totalSteps * 0.1);
+          const transcriptionSteps = totalSteps * 0.75 - (needsConversion ? totalSteps * 0.4 : totalSteps * 0.1);
+          const transcriptionPercent = Math.floor((transcriptionProgress / transcriptionSteps) * 100);
+          
+          if (transcriptionPercent < 20) {
+            updateFakeProgress(progress, "Starting transcription...");
+          } else if (transcriptionPercent < 50) {
+            updateFakeProgress(progress, `Transcribing audio... ${transcriptionPercent}%`);
+          } else if (transcriptionPercent < 80) {
+            updateFakeProgress(progress, `Processing transcription... ${transcriptionPercent}%`);
+          } else {
+            updateFakeProgress(progress, "Finalizing transcription...");
+          }
+        } else {
+          // Note creation phase (15% of steps)
+          if (step <= totalSteps * 0.9) {
+            updateFakeProgress(progress, "Transcription complete, creating note...");
+          } else {
+            updateFakeProgress(progress, "Saving note...");
+          }
+        }
+      }, updateInterval);
+    };
+
+    simulateProgress();
+
+    try {
+      const formData = new FormData();
+      formData.append("audio", file);
+      formData.append("userId", user.userId);
+
+      // Use XMLHttpRequest to track actual upload progress
+      const xhr = new XMLHttpRequest();
+      
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            // Upload progress: 0-20% (actual file upload)
+            const uploadPercent = Math.round((e.loaded / e.total) * 20);
+            updateFakeProgress(uploadPercent, `Uploading file... ${Math.round((e.loaded / e.total) * 100)}%`);
+            
+            // Mark upload as complete when done
+            if (e.loaded === e.total) {
+              uploadComplete = true;
+            }
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          // Mark upload as complete
+          uploadComplete = true;
+          
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              // Stop progress simulation
+              if (progressInterval) {
+                clearInterval(progressInterval);
+              }
+              // Jump to completion
+              setUploadPercentage(100);
+              setUploadProgress("Note created successfully!");
+              resolve(data);
+            } catch (e) {
+              if (progressInterval) {
+                clearInterval(progressInterval);
+              }
+              reject(new Error("Invalid response from server"));
+            }
+          } else {
+            if (progressInterval) {
+              clearInterval(progressInterval);
+            }
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              const errorMsg = errorData.message || errorData.error || errorData.details || "Failed to process audio file";
+              reject(new Error(errorMsg));
+            } catch (e) {
+              reject(new Error(`Server error: ${xhr.status}`));
+            }
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          if (progressInterval) {
+            clearInterval(progressInterval);
+          }
+          reject(new Error("Network error occurred"));
+        });
+
+        xhr.addEventListener('abort', () => {
+          if (progressInterval) {
+            clearInterval(progressInterval);
+          }
+          reject(new Error("Upload cancelled"));
+        });
+
+        xhr.open('POST', `${API_CONFIG.BACKEND_URL}/api/notes/upload`);
+        xhr.send(formData);
+      });
+
+      const data = await uploadPromise;
+
+      // Update needsConversion from server metadata if available
+      // Note: Progress simulation is already running, so we just update the flag
+      if (data.metadata) {
+        needsConversion = data.metadata.needsConversion;
+      }
+
+      if (data.note) {
+        // Add the new note to the list
+        setNotes([data.note, ...notes]);
+        
+        // Wait a bit for final progress update, then close
+        setTimeout(() => {
+          setIsUploading(false);
+          setUploadProgress("");
+          setUploadPercentage(0);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+          }
+          // Optionally open the newly created note
+          handleNoteClick(data.note);
+        }, 1000);
+      } else {
+        // Handle case where response is OK but no note was created
+        const errorMsg = data.message || data.error || "Transcription failed. No note was created.";
+        throw new Error(errorMsg);
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+      alert("Error uploading file: " + error.message);
+      setIsUploading(false);
+      setUploadProgress("");
+      setUploadPercentage(0);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
+  };
 
   if (loading) {
     return (
@@ -534,7 +789,97 @@ export default function HomePage() {
           )}
         </div>
 
-        <h1 className="page-title">What's on Your Mind?</h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <h1 className="page-title">What's on Your Mind?</h1>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="audio/*"
+              style={{ display: "none" }}
+            />
+            <button
+              onClick={triggerFileUpload}
+              className="upload-btn"
+              disabled={isUploading}
+              title="Upload audio file to transcribe"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 20px",
+                backgroundColor: isUploading ? "#ccc" : "#007bff",
+                color: "white",
+                border: "none",
+                borderRadius: "5px",
+                cursor: isUploading ? "not-allowed" : "pointer",
+                fontSize: "14px",
+                fontWeight: "500",
+              }}
+            >
+              <FiUpload />
+              {isUploading ? "Processing..." : "Upload Audio"}
+            </button>
+          </div>
+        </div>
+
+        {isUploading && (
+          <div style={{
+            marginBottom: "20px",
+            padding: "15px",
+            backgroundColor: "var(--bg-secondary)",
+            borderRadius: "8px",
+            border: "1px solid var(--border-color)",
+            boxShadow: "0 2px 4px var(--shadow)"
+          }}>
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "10px"
+            }}>
+              <span style={{ 
+                fontSize: "14px", 
+                color: "var(--text-primary)",
+                fontWeight: "500"
+              }}>
+                {uploadProgress}
+              </span>
+              <span style={{ 
+                fontSize: "14px", 
+                color: "var(--text-secondary)",
+                fontWeight: "600"
+              }}>
+                {uploadPercentage}%
+              </span>
+            </div>
+            <div style={{
+              width: "100%",
+              height: "8px",
+              backgroundColor: "var(--bg-tertiary)",
+              borderRadius: "4px",
+              overflow: "hidden"
+            }}>
+              <div style={{
+                width: `${uploadPercentage}%`,
+                height: "100%",
+                backgroundColor: "#007bff",
+                borderRadius: "4px",
+                transition: "width 0.3s ease",
+                background: uploadPercentage === 100 
+                  ? "linear-gradient(90deg, #28a745, #20c997)"
+                  : "linear-gradient(90deg, #007bff, #0056b3)"
+              }} />
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <h1 className="page-title">What's on Your Mind?</h1>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          </div>
+        </div>
 
         {selectedNote ? (
           <div 

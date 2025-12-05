@@ -1,14 +1,14 @@
 const CategoryModel = require("../models/CategoryModel");
 
 class CategoryController {
-  static async getCategories(req, res) {
+  static async getUserCategories(req, res) {
     const { userId } = req.params;
 
     try {
       const categories = await CategoryModel.findByUserId(userId);
       return res.status(200).json(categories);
     } catch (error) {
-      console.error("Get categories error:", error);
+      console.error("Get user categories error:", error);
       return res.status(500).json({ message: "Database error" });
     }
   }

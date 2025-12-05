@@ -33,9 +33,44 @@ class NoteModel {
   static create(userId, title, content, color = "#ffffff", categoryId = null) {
     return new Promise((resolve, reject) => {
       const query = "INSERT INTO notes (user_id, title, content, color, category_id) VALUES (?, ?, ?, ?, ?)";
+      const startTime = Date.now();
       db.query(query, [userId, title, content || "", color, categoryId], (err, result) => {
+        const duration = Date.now() - startTime;
+        if (duration > 100) {
+          console.log(`[NoteModel.create] Database write took ${duration}ms (content length: ${(content || "").length} chars)`);
+        }
         if (err) reject(err);
         else resolve(result.insertId);
+      });
+    });
+  }
+  
+  static createAndReturn(userId, title, content, color = "#ffffff", categoryId = null) {
+    return new Promise((resolve, reject) => {
+      const query = "INSERT INTO notes (user_id, title, content, color, category_id) VALUES (?, ?, ?, ?, ?)";
+      const startTime = Date.now();
+      db.query(query, [userId, title, content || "", color, categoryId], (err, result) => {
+        const duration = Date.now() - startTime;
+        if (duration > 100) {
+          console.log(`[NoteModel.createAndReturn] Database write took ${duration}ms (content length: ${(content || "").length} chars)`);
+        }
+        if (err) {
+          reject(err);
+        } else {
+          // Return the note data directly without another query
+          const note = {
+            id: result.insertId,
+            user_id: userId,
+            title: title,
+            content: content || "",
+            color: color,
+            category_id: categoryId,
+            pinned: 0,
+            created_at: new Date(),
+            updated_at: new Date()
+          };
+          resolve(note);
+        }
       });
     });
   }

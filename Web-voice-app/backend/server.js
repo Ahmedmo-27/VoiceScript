@@ -10,6 +10,7 @@ const categoryRoutes = require("./routes/categoryRoutes");
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(express.urlencoded({ extended: true }));
 
 // Import database connection (this will initialize the connection)
 require("./config/database");
@@ -40,11 +41,12 @@ app.listen(PORT, () => {
   console.log("  POST /login");
   console.log("  GET  /api/test");
   console.log("  GET  /api/notes/:userId");
-  console.log("  GET  /api/notes/:userId/search?q=query");
+  console.log("  GET  /api/notes/search/:userId?q=query");
   console.log("  POST /api/notes");
   console.log("  PUT  /api/notes/:noteId");
   console.log("  DELETE /api/notes/:noteId");
   console.log("  POST /api/notes/:noteId/duplicate");
+  console.log("  POST /api/notes/upload");
   console.log("  GET  /api/user/:userId");
   console.log("  PUT  /api/user/:userId");
   console.log("  GET  /api/categories/:userId");

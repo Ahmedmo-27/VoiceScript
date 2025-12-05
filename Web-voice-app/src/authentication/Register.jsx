@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import API_CONFIG from "../config/api";
 import "./Register.css";
 
 export default function Register() {
@@ -14,7 +15,7 @@ export default function Register() {
     e.preventDefault();
 
     try {
-      const response = await fetch("http://localhost:5001/register", {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
