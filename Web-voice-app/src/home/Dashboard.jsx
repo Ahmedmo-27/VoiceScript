@@ -5,6 +5,7 @@ import { useTheme } from "../context/ThemeContext";
 import { highlightText } from "../utils/highlightText";
 import VoiceCommandButton from "../components/VoiceCommandButton";
 import API_CONFIG from "../config/api";
+import { fetchNotes as apiFetchNotes, fetchCategories as apiFetchCategories, createCategory as apiCreateCategory, searchNotes as apiSearchNotes } from "../api/api.js";
 import "./Dashboard.css";
 
 export default function HomePage() {
@@ -30,6 +31,7 @@ export default function HomePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadPercentage, setUploadPercentage] = useState(0);
+  const [uploadMetadata, setUploadMetadata] = useState(null);
   const fileInputRef = useRef(null);
 
   // Get user from localStorage
@@ -47,85 +49,37 @@ export default function HomePage() {
 
   // Fetch notes from backend
   const fetchNotes = async (userId, categoryId = null) => {
-    try {
-      const url = categoryId 
-        ? `${API_CONFIG.BACKEND_URL}/api/notes/${userId}?categoryId=${categoryId}`
-        : `${API_CONFIG.BACKEND_URL}/api/notes/${userId}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setNotes(data);
-      } else {
-        console.error("Failed to fetch notes");
-      }
-    } catch (error) {
-      console.error("Error fetching notes:", error);
-    } finally {
-      setLoading(false);
-    }
+    const data = await apiFetchNotes(userId, categoryId);
+    setNotes(data);
+    setLoading(false);
   };
 
   // Fetch categories from backend
   const fetchCategories = async (userId) => {
-    try {
-      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories/${userId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setCategories(data);
-      } else {
-        console.error("Failed to fetch categories:", response.status, response.statusText);
-        // If categories table doesn't exist or other error, just set empty array
-        setCategories([]);
-      }
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-      // Set empty array on error so app doesn't break
-      setCategories([]);
-    }
+    const data = await apiFetchCategories(userId);
+    setCategories(data);
   };
 
   // Create new category
   const handleCreateCategory = async () => {
     if (!newCategoryName.trim() || !user) return;
 
-    try {
-      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: user.userId,
-          name: newCategoryName.trim(),
-        }),
-      });
-
-      if (response.ok) {
-        const category = await response.json();
-        setCategories([...categories, category]);
-        setNewCategoryName("");
-        setShowCategoryInput(false);
-      }
-    } catch (error) {
-      console.error("Error creating category:", error);
+    const category = await apiCreateCategory(user.userId, newCategoryName.trim());
+    if (category) {
+      setCategories([...categories, category]);
+      setNewCategoryName("");
+      setShowCategoryInput(false);
     }
   };
 
   // Search notes
   const searchNotes = async (userId, query) => {
-    if (!query.trim()) {
+    const result = await apiSearchNotes(userId, query);
+    if (result === null) {
+      // Query was empty, fetch all notes
       fetchNotes(userId);
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/search/${userId}?q=${encodeURIComponent(query)}`);
-      if (response.ok) {
-        const data = await response.json();
-        setNotes(data);
-      }
-    } catch (error) {
-      console.error("Error searching notes:", error);
+    } else {
+      setNotes(result);
     }
   };
 
@@ -483,86 +437,12 @@ export default function HomePage() {
     setIsUploading(true);
     setUploadProgress("Preparing upload...");
     setUploadPercentage(0);
+    setUploadMetadata(null);
 
-    // Check if file needs conversion (fallback if metadata not available)
-    const fileExt = file.name.split('.').pop()?.toLowerCase();
-    
-    // Will be updated from server response if available
-    let needsConversion = fileExt !== "wav";
-    let updateInterval = 400;
-    let totalSteps = 20;
-
-    // Fake progress tracker
-    let progressInterval = null;
-    let uploadComplete = false;
-    let currentProgress = 0;
-
-    const updateFakeProgress = (percentage, message) => {
-      currentProgress = Math.min(percentage, 95); // Cap at 95% until response arrives
-      setUploadPercentage(currentProgress);
-      setUploadProgress(message);
-    };
-
-    // Start initial progress
-    updateFakeProgress(5, "Preparing file...");
-
-    // Simulate progress continuously
-    const simulateProgress = () => {
-      let step = 0;
-      const startProgress = 20; // Start processing simulation at 20%
-      const endProgress = 90; // End at 90% until response
-      const progressRange = endProgress - startProgress;
-      const progressPerStep = progressRange / totalSteps;
-      
-      progressInterval = setInterval(() => {
-        if (!uploadComplete) {
-          // Still uploading - wait for XHR progress to handle this
-          return;
-        }
-
-        step++;
-        const progress = startProgress + (step * progressPerStep);
-        
-        // Determine which phase we're in based on progress
-        if (step <= totalSteps * 0.1) {
-          // Initial validation (10% of steps)
-          updateFakeProgress(progress, "File received, validating...");
-        } else if (needsConversion && step <= totalSteps * 0.4) {
-          // Conversion phase (30% of steps if conversion needed)
-          if (step <= totalSteps * 0.2) {
-            updateFakeProgress(progress, "Converting audio to WAV format...");
-          } else if (step <= totalSteps * 0.3) {
-            updateFakeProgress(progress, "Conversion in progress...");
-          } else {
-            updateFakeProgress(progress, "Conversion complete, preparing transcription...");
-          }
-        } else if (step <= totalSteps * 0.85) {
-          // Transcription phase (45-75% of steps)
-          const transcriptionProgress = step - (needsConversion ? totalSteps * 0.4 : totalSteps * 0.1);
-          const transcriptionSteps = totalSteps * 0.75 - (needsConversion ? totalSteps * 0.4 : totalSteps * 0.1);
-          const transcriptionPercent = Math.floor((transcriptionProgress / transcriptionSteps) * 100);
-          
-          if (transcriptionPercent < 20) {
-            updateFakeProgress(progress, "Starting transcription...");
-          } else if (transcriptionPercent < 50) {
-            updateFakeProgress(progress, `Transcribing audio... ${transcriptionPercent}%`);
-          } else if (transcriptionPercent < 80) {
-            updateFakeProgress(progress, `Processing transcription... ${transcriptionPercent}%`);
-          } else {
-            updateFakeProgress(progress, "Finalizing transcription...");
-          }
-        } else {
-          // Note creation phase (15% of steps)
-          if (step <= totalSteps * 0.9) {
-            updateFakeProgress(progress, "Transcription complete, creating note...");
-          } else {
-            updateFakeProgress(progress, "Saving note...");
-          }
-        }
-      }, updateInterval);
-    };
-
-    simulateProgress();
+    // Processing progress indicator
+    let processingInterval = null;
+    let processingStartTime = null;
+    let processingProgress = 20; // Track progress from 20% to 90%
 
     try {
       const formData = new FormData();
@@ -575,42 +455,73 @@ export default function HomePage() {
       const uploadPromise = new Promise((resolve, reject) => {
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
-            // Upload progress: 0-20% (actual file upload)
+            // Real upload progress: 0-20% (actual file upload to backend)
             const uploadPercent = Math.round((e.loaded / e.total) * 20);
-            updateFakeProgress(uploadPercent, `Uploading file... ${Math.round((e.loaded / e.total) * 100)}%`);
+            setUploadPercentage(uploadPercent);
+            setUploadProgress(`Uploading file... ${Math.round((e.loaded / e.total) * 100)}%`);
             
-            // Mark upload as complete when done
+            // When upload completes, start processing indicator
             if (e.loaded === e.total) {
-              uploadComplete = true;
+              setUploadPercentage(20);
+              setUploadProgress("Upload complete. Processing audio file...");
+              processingStartTime = Date.now();
+              processingProgress = 20; // Reset to 20%
+              
+              // Start processing progress animation (20% to 90%)
+              // This gives visual feedback while waiting for Flask to complete
+              const maxProcessingProgress = 90;
+              const processingDuration = 60000; // 60 seconds max
+              
+              processingInterval = setInterval(() => {
+                if (processingStartTime) {
+                  const elapsed = Date.now() - processingStartTime;
+                  // Gradually increase from 20% to 90% over time
+                  // Cap at 90% to leave room for completion
+                  const targetProgress = Math.min(
+                    maxProcessingProgress,
+                    20 + (elapsed / processingDuration) * 70
+                  );
+                  
+                  processingProgress = Math.max(processingProgress, targetProgress);
+                  setUploadPercentage(Math.round(processingProgress));
+                  
+                  // Update message based on elapsed time
+                  const secondsElapsed = Math.floor(elapsed / 1000);
+                  if (secondsElapsed < 5) {
+                    setUploadProgress("Upload complete. Validating audio file...");
+                  } else if (secondsElapsed < 15) {
+                    setUploadProgress("Processing audio file... (this may take a moment)");
+                  } else {
+                    setUploadProgress(`Transcribing audio... (${secondsElapsed}s elapsed)`);
+                  }
+                }
+              }, 500); // Update every 500ms
             }
           }
         });
 
         xhr.addEventListener('load', () => {
-          // Mark upload as complete
-          uploadComplete = true;
+          // Stop processing animation
+          if (processingInterval) {
+            clearInterval(processingInterval);
+            processingInterval = null;
+          }
           
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               const data = JSON.parse(xhr.responseText);
-              // Stop progress simulation
-              if (progressInterval) {
-                clearInterval(progressInterval);
+              // Set metadata immediately when response arrives
+              if (data.metadata) {
+                setUploadMetadata(data.metadata);
               }
-              // Jump to completion
+              // Show completion
               setUploadPercentage(100);
               setUploadProgress("Note created successfully!");
               resolve(data);
             } catch (e) {
-              if (progressInterval) {
-                clearInterval(progressInterval);
-              }
               reject(new Error("Invalid response from server"));
             }
           } else {
-            if (progressInterval) {
-              clearInterval(progressInterval);
-            }
             try {
               const errorData = JSON.parse(xhr.responseText);
               const errorMsg = errorData.message || errorData.error || errorData.details || "Failed to process audio file";
@@ -622,15 +533,17 @@ export default function HomePage() {
         });
 
         xhr.addEventListener('error', () => {
-          if (progressInterval) {
-            clearInterval(progressInterval);
+          if (processingInterval) {
+            clearInterval(processingInterval);
+            processingInterval = null;
           }
           reject(new Error("Network error occurred"));
         });
 
         xhr.addEventListener('abort', () => {
-          if (progressInterval) {
-            clearInterval(progressInterval);
+          if (processingInterval) {
+            clearInterval(processingInterval);
+            processingInterval = null;
           }
           reject(new Error("Upload cancelled"));
         });
@@ -641,27 +554,27 @@ export default function HomePage() {
 
       const data = await uploadPromise;
 
-      // Update needsConversion from server metadata if available
-      // Note: Progress simulation is already running, so we just update the flag
+      // Store metadata for display in the progress bar
       if (data.metadata) {
-        needsConversion = data.metadata.needsConversion;
+        setUploadMetadata(data.metadata);
       }
 
       if (data.note) {
         // Add the new note to the list
         setNotes([data.note, ...notes]);
         
-        // Wait a bit for final progress update, then close
+        // Wait a bit longer to show metadata, then close
         setTimeout(() => {
           setIsUploading(false);
           setUploadProgress("");
           setUploadPercentage(0);
+          setUploadMetadata(null);
           if (fileInputRef.current) {
             fileInputRef.current.value = "";
           }
           // Optionally open the newly created note
           handleNoteClick(data.note);
-        }, 1000);
+        }, 2000); // Increased to 2 seconds so metadata is visible
       } else {
         // Handle case where response is OK but no note was created
         const errorMsg = data.message || data.error || "Transcription failed. No note was created.";
@@ -669,13 +582,16 @@ export default function HomePage() {
       }
     } catch (error) {
       console.error("Upload error:", error);
-      if (progressInterval) {
-        clearInterval(progressInterval);
+      // Clean up processing interval if it exists
+      if (processingInterval) {
+        clearInterval(processingInterval);
+        processingInterval = null;
       }
       alert("Error uploading file: " + error.message);
       setIsUploading(false);
       setUploadProgress("");
       setUploadPercentage(0);
+      setUploadMetadata(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -859,7 +775,8 @@ export default function HomePage() {
               height: "8px",
               backgroundColor: "var(--bg-tertiary)",
               borderRadius: "4px",
-              overflow: "hidden"
+              overflow: "hidden",
+              marginBottom: uploadMetadata ? "10px" : "0"
             }}>
               <div style={{
                 width: `${uploadPercentage}%`,
@@ -872,14 +789,39 @@ export default function HomePage() {
                   : "linear-gradient(90deg, #007bff, #0056b3)"
               }} />
             </div>
+            {uploadMetadata && (
+              <div style={{
+                fontSize: "12px",
+                color: "var(--text-secondary)",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "12px",
+                marginTop: "10px",
+                paddingTop: "10px",
+                borderTop: "1px solid var(--border-color)"
+              }}>
+                {uploadMetadata.fileSizeMB !== undefined && uploadMetadata.fileSizeMB !== null && (
+                  <span>📁 File: {uploadMetadata.fileSizeMB} MB</span>
+                )}
+                {uploadMetadata.needsConversion && uploadMetadata.estimatedConversionTime !== undefined && uploadMetadata.estimatedConversionTime !== null && (
+                  <span>🔄 Conversion: ~{uploadMetadata.estimatedConversionTime}s</span>
+                )}
+                {uploadMetadata.estimatedTranscriptionTime !== undefined && uploadMetadata.estimatedTranscriptionTime !== null && (
+                  <span>🎤 Transcription: ~{uploadMetadata.estimatedTranscriptionTime}s</span>
+                )}
+                {uploadMetadata.estimatedTotalTime !== undefined && uploadMetadata.estimatedTotalTime !== null && (
+                  <span style={{ 
+                    fontWeight: "600", 
+                    color: "var(--text-primary)",
+                    fontSize: "13px"
+                  }}>
+                    ⏱️ Total: ~{uploadMetadata.estimatedTotalTime}s
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
-
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-          <h1 className="page-title">What's on Your Mind?</h1>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          </div>
-        </div>
 
         {selectedNote ? (
           <div 
