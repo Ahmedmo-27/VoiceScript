@@ -1,0 +1,245 @@
+.voice-command-button-container {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 1000;
+}
+
+.voice-command-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: var(--bg-secondary);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  box-shadow: 0 4px 12px var(--shadow);
+  transition: all 0.3s ease;
+  z-index: 1001;
+}
+
+.voice-command-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px var(--shadow);
+}
+
+.voice-command-btn.listening {
+  background: #ff4444;
+  animation: pulse-ring 1.5s infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 68, 68, 0);
+  }
+}
+
+.voice-command-help-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.voice-command-help-btn:hover {
+  background: var(--border-color);
+  transform: scale(1.1);
+}
+
+.voice-commands-popup {
+  position: fixed;
+  bottom: 110px;
+  right: 30px;
+  width: 320px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 15px;
+  box-shadow: 0 8px 24px var(--shadow-strong);
+  z-index: 1002;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.voice-commands-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.voice-commands-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 20px;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  transition: background 0.2s ease;
+}
+
+.close-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+.voice-commands-list {
+  padding: 15px 20px;
+}
+
+.command-item {
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.command-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.command-item strong {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 5px;
+  font-size: 14px;
+}
+
+.command-item span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.voice-commands-footer {
+  padding: 15px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.start-listening-btn {
+  width: 100%;
+  padding: 10px;
+  background: var(--text-primary);
+  color: var(--bg-secondary);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.start-listening-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.listening-indicator {
+  position: fixed;
+  bottom: 110px;
+  right: 30px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 15px 20px;
+  box-shadow: 0 4px 12px var(--shadow);
+  z-index: 1003;
+  animation: slideUp 0.3s ease;
+}
+
+.listening-indicator p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.listening-indicator span {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.listening-pulse {
+  width: 10px;
+  height: 10px;
+  background: #ff4444;
+  border-radius: 50%;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (max-width: 768px) {
+  .voice-command-button-container {
+    bottom: 20px;
+    right: 20px;
+  }
+
+  .voice-commands-popup {
+    bottom: 100px;
+    right: 20px;
+    width: calc(100vw - 40px);
+    max-width: 320px;
+  }
+
+  .listening-indicator {
+    bottom: 100px;
+    right: 20px;
+    max-width: calc(100vw - 40px);
+  }
+}
+

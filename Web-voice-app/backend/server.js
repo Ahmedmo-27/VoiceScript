@@ -1,127 +1,54 @@
 const express = require("express");
-const mysql = require("mysql2");
-const bcrypt = require("bcryptjs");
 const cors = require("cors");
+
+// Import routes
+const authRoutes = require("./routes/authRoutes");
+const noteRoutes = require("./routes/noteRoutes");
+const userRoutes = require("./routes/userRoutes");
+const categoryRoutes = require("./routes/categoryRoutes");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --------------------
-// Database Connection
-// --------------------
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "",        
-  database: "voicescript_db"
-});
-
-db.connect((err) => {
-  if (err) {
-    console.error("Database connection failed:", err);
-  } else {
-    console.log("Connected to MySQL");
-  }
-});
-
+// Import database connection (this will initialize the connection)
+require("./config/database");
 
 // --------------------
-//     SIGN UP ROUTE
+//     ROUTES
 // --------------------
-app.post("/register", async (req, res) => {
-  const { username, email, password } = req.body;
+app.use("/", authRoutes);
 
-  // Check if fields exist
-  if (!username || !email || !password) {
-    return res.status(400).json({ message: "All fields are required" });
-  }
-
-  try {
-    // Check if email or username already exists
-    const checkQuery = "SELECT * FROM users WHERE email = ? OR username = ?";
-    db.query(checkQuery, [email, username], async (err, result) => {
-      if (err) return res.status(500).json({ message: "Database error" });
-
-      if (result.length > 0) {
-        return res.status(400).json({
-          message: "Username or Email already exists"
-        });
-      }
-
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      // Insert into DB
-      const insertQuery = `
-        INSERT INTO users (username, email, password_hash)
-        VALUES (?, ?, ?)
-      `;
-
-      db.query(insertQuery, [username, email, hashedPassword], (err, result) => {
-        if (err) return res.status(500).json({ message: "Insert error" });
-
-        return res.status(201).json({
-          message: "User created successfully",
-          userId: result.insertId
-        });
-      });
-    });
-  } catch (error) {
-    return res.status(500).json({ message: "Server error" });
-  }
+// Test route
+app.get("/api/test", (req, res) => {
+  res.json({ message: "API is working!" });
 });
 
-
-
-app.post("/login", (req, res) => {
-  const { email, password } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required" });
-  }
-
-  const query = "SELECT * FROM users WHERE email = ?";
-  db.query(query, [email], async (err, result) => {
-    if (err) {
-      console.error("Database query error:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-
-    if (result.length === 0) {
-      return res.status(400).json({ message: "Invalid email or password" });
-    }
-
-    const user = result[0];
-
-    try {
-      const match = await bcrypt.compare(password, user.password_hash);
-      if (!match) {
-        return res.status(400).json({ message: "Invalid email or password" });
-      }
-
-      // Update last login
-      db.query("UPDATE users SET last_login = NOW() WHERE id = ?", [user.id], (err) => {
-        if (err) console.error("Failed to update last login:", err);
-      });
-
-      return res.status(200).json({
-        message: "Login successful",
-        userId: user.id,
-        username: user.username,
-        email: user.email
-      });
-    } catch (bcryptErr) {
-      console.error("Bcrypt error:", bcryptErr);
-      return res.status(500).json({ message: "Server error during password check" });
-    }
-  });
-});
-
+// API routes
+app.use("/api/notes", noteRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/categories", categoryRoutes);
 
 // --------------------
 // Start Server
 // --------------------
-app.listen(5000, () => {
-  console.log("Server running on http://localhost:5000");
+const PORT = 5001;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log("Available routes:");
+  console.log("  POST /register");
+  console.log("  POST /login");
+  console.log("  GET  /api/test");
+  console.log("  GET  /api/notes/:userId");
+  console.log("  GET  /api/notes/:userId/search?q=query");
+  console.log("  POST /api/notes");
+  console.log("  PUT  /api/notes/:noteId");
+  console.log("  DELETE /api/notes/:noteId");
+  console.log("  POST /api/notes/:noteId/duplicate");
+  console.log("  GET  /api/user/:userId");
+  console.log("  PUT  /api/user/:userId");
+  console.log("  GET  /api/categories/:userId");
+  console.log("  POST /api/categories");
+  console.log("  PUT  /api/categories/:categoryId");
+  console.log("  DELETE /api/categories/:categoryId");
 });
