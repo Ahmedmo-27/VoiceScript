@@ -30,6 +30,12 @@ env.bak/
 venv.bak/
 .venv
 
+Admin Page.png
+Home Page.png
+Note Page.png
+Login Page.png
+SignUp Page.png
+
 # Node.js
 node_modules/
 npm-debug.log*
