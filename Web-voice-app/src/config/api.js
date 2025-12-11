@@ -6,6 +6,7 @@
 const API_CONFIG = {
   BACKEND_URL: import.meta.env.VITE_BACKEND_URL || "http://localhost:5001",
   MICROPHONE_SERVICE_URL: import.meta.env.VITE_MICROPHONE_SERVICE_URL || "http://127.0.0.1:5003",
+  FILE_UPLOAD_SERVICE_URL: import.meta.env.VITE_FILE_UPLOAD_SERVICE_URL || "http://localhost:5000",
 };
 
 export default API_CONFIG;

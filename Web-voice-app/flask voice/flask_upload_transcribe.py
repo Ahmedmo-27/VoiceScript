@@ -44,12 +44,69 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
+# Supported languages for Google Speech Recognition
+# Format: language code (e.g., 'en-US', 'es-ES', 'fr-FR')
+# See: https://cloud.google.com/speech-to-text/docs/languages
+SUPPORTED_LANGUAGES = {
+    'en-US': 'English (United States)',
+    'en-GB': 'English (United Kingdom)',
+    'es-ES': 'Spanish (Spain)',
+    'es-MX': 'Spanish (Mexico)',
+    'fr-FR': 'French (France)',
+    'de-DE': 'German (Germany)',
+    'it-IT': 'Italian (Italy)',
+    'pt-BR': 'Portuguese (Brazil)',
+    'pt-PT': 'Portuguese (Portugal)',
+    'ru-RU': 'Russian (Russia)',
+    'ja-JP': 'Japanese (Japan)',
+    'ko-KR': 'Korean (Korea)',
+    'zh-CN': 'Chinese (Simplified, China)',
+    'zh-TW': 'Chinese (Traditional, Taiwan)',
+    'ar-SA': 'Arabic (Saudi Arabia)',
+    'ar-EG': 'Arabic (Egypt)',
+    'hi-IN': 'Hindi (India)',
+    'nl-NL': 'Dutch (Netherlands)',
+    'pl-PL': 'Polish (Poland)',
+    'tr-TR': 'Turkish (Turkey)',
+    'sv-SE': 'Swedish (Sweden)',
+    'da-DK': 'Danish (Denmark)',
+    'no-NO': 'Norwegian (Norway)',
+    'fi-FI': 'Finnish (Finland)',
+    'cs-CZ': 'Czech (Czech Republic)',
+    'hu-HU': 'Hungarian (Hungary)',
+    'ro-RO': 'Romanian (Romania)',
+    'th-TH': 'Thai (Thailand)',
+    'vi-VN': 'Vietnamese (Vietnam)',
+    'id-ID': 'Indonesian (Indonesia)',
+    'ms-MY': 'Malay (Malaysia)',
+    'he-IL': 'Hebrew (Israel)',
+    'uk-UA': 'Ukrainian (Ukraine)',
+    'el-GR': 'Greek (Greece)',
+}
+
+def validate_language(language_code):
+    """Validate if language code is supported."""
+    if not language_code:
+        return 'en-US', None
+    if language_code in SUPPORTED_LANGUAGES:
+        return language_code, None
+    return None, f"Unsupported language code: {language_code}. Supported languages: {', '.join(SUPPORTED_LANGUAGES.keys())}"
+
 
 def allowed_file(filename):
     """Check if file extension is allowed."""
     if not filename or '.' not in filename:
         return False
     return filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@app.route("/api/languages", methods=["GET"])
+def get_languages():
+    """Get list of supported languages."""
+    return jsonify({
+        "languages": SUPPORTED_LANGUAGES,
+        "default": "en-US"
+    }), 200
 
 
 def transcribe_speech(audio_path, language, recognizer):
@@ -147,8 +204,15 @@ def transcribe_file():
         if not allowed_file(audio_file.filename):
             return jsonify({"success": False, "error": f"Invalid file type. Supported: {', '.join(ALLOWED_EXTENSIONS)}"}), 400
         
+        # Get and validate language parameter
         language = request.form.get('language', 'en-US')
-        logger.info(f"Processing file: {audio_file.filename}")
+        language, language_error = validate_language(language)
+        
+        if language_error:
+            logger.warning(f"Language validation error: {language_error}")
+            return jsonify({"success": False, "error": language_error}), 400
+        
+        logger.info(f"Processing file: {audio_file.filename} with language: {language} ({SUPPORTED_LANGUAGES.get(language, 'Unknown')})")
         
         # Save uploaded file
         filename = secure_filename(audio_file.filename)
@@ -220,6 +284,8 @@ def transcribe_file():
             return jsonify({
                 "success": True,
                 "text": text,
+                "language": language,
+                "language_name": SUPPORTED_LANGUAGES.get(language, "Unknown"),
                 "metadata": {
                     "needsConversion": not is_wav,
                     "fileExtension": file_ext,
@@ -253,7 +319,9 @@ def health_check():
     """Health check endpoint."""
     return jsonify({
         "status": "healthy",
-        "message": "Upload transcription service is running"
+        "message": "Upload transcription service is running",
+        "supported_languages_count": len(SUPPORTED_LANGUAGES),
+        "default_language": "en-US"
     }), 200
 
 
@@ -269,6 +337,7 @@ if __name__ == "__main__":
     print("Endpoints:")
     print("  POST /api/transcribe-file - Upload and transcribe audio")
     print("  POST /api/analyze-file - Analyze file metadata")
+    print("  GET  /api/languages - Get supported languages")
     print("  GET  /health - Health check")
     print("\nNote: Non-WAV files are automatically converted to WAV before transcription.")
     print("\nPress Ctrl+C to stop")

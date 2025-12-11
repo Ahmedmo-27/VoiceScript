@@ -1,1 +1,8 @@
-python flask_transcribe.
+To run both Flask services:
+
+Option 1: Use run.py (recommended)
+  python run.py
+
+Option 2: Run services separately
+  Terminal 1: python flask_transcribe.py (port 5003 - microphone)
+  Terminal 2: python flask_upload_transcribe.py (port 5000 - file upload)

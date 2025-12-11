@@ -121,8 +121,9 @@ class NoteController {
   }
 
   static async uploadAndTranscribe(req, res) {
-    // Get userId from form data (sent as form field, not JSON)
+    // Get userId and language from form data (sent as form field, not JSON)
     const userId = req.body.userId;
+    const language = req.body.language || 'en-US'; // Default to en-US if not provided
     const audioFile = req.file;
 
     if (!userId) {
@@ -169,6 +170,7 @@ class NoteController {
         filename: audioFile.originalname,
         contentType: audioFile.mimetype,
       });
+      formData.append("language", language); // Pass language parameter to Flask service
 
       let transcriptionData;
       try {

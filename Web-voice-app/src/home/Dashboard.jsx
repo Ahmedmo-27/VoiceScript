@@ -4,6 +4,7 @@ import { FiMic, FiHome, FiFileText, FiUser, FiPlus, FiMapPin, FiEdit2, FiTrash2,
 import { useTheme } from "../context/ThemeContext";
 import { highlightText } from "../utils/highlightText";
 import VoiceCommandButton from "../components/VoiceCommandButton";
+import LanguageSelector from "../components/LanguageSelector";
 import API_CONFIG from "../config/api";
 import { fetchNotes as apiFetchNotes, fetchCategories as apiFetchCategories, createCategory as apiCreateCategory, searchNotes as apiSearchNotes } from "../api/api.js";
 import "./Dashboard.css";
@@ -32,6 +33,10 @@ export default function HomePage() {
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadPercentage, setUploadPercentage] = useState(0);
   const [uploadMetadata, setUploadMetadata] = useState(null);
+  const [selectedLanguage, setSelectedLanguage] = useState(() => {
+    // Load language preference from localStorage, default to en-US
+    return localStorage.getItem('transcriptionLanguage') || 'en-US';
+  });
   const fileInputRef = useRef(null);
 
   // Get user from localStorage
@@ -46,6 +51,15 @@ export default function HomePage() {
       navigate("/login");
     }
   }, [navigate]);
+
+  // Save language preference to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('transcriptionLanguage', selectedLanguage);
+  }, [selectedLanguage]);
+
+  const handleLanguageChange = (languageCode) => {
+    setSelectedLanguage(languageCode);
+  };
 
   // Fetch notes from backend
   const fetchNotes = async (userId, categoryId = null) => {
@@ -324,6 +338,13 @@ export default function HomePage() {
           const wavBlob = encodeWAV(audioBuffer);
           const formData = new FormData();
           formData.append("audio", wavBlob, "recording.wav");
+          
+          // Ensure language is set, default to en-US if not
+          const languageToSend = selectedLanguage || 'en-US';
+          formData.append("language", languageToSend);
+          
+          console.log("Sending transcription request with language:", languageToSend);
+          console.log("Audio blob size:", wavBlob.size, "bytes");
 
           try {
             const response = await fetch(`${API_CONFIG.MICROPHONE_SERVICE_URL}/transcribe`, {
@@ -335,6 +356,8 @@ export default function HomePage() {
             
             if (!response.ok) {
               console.error("Transcription error:", data);
+              console.error("Response status:", response.status);
+              console.error("Error details:", JSON.stringify(data, null, 2));
               alert(`Transcription error: ${data.error || data.message || "Unknown error"}`);
               return;
             }
@@ -448,6 +471,7 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append("audio", file);
       formData.append("userId", user.userId);
+      formData.append("language", selectedLanguage);
 
       // Use XMLHttpRequest to track actual upload progress
       const xhr = new XMLHttpRequest();
@@ -708,6 +732,10 @@ export default function HomePage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <h1 className="page-title">What's on Your Mind?</h1>
           <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <LanguageSelector
+              selectedLanguage={selectedLanguage}
+              onLanguageChange={handleLanguageChange}
+            />
             <input
               type="file"
               ref={fileInputRef}
@@ -993,12 +1021,19 @@ export default function HomePage() {
 
             <div className="modal-buttons">
               <button className="modal-btn cancel" onClick={() => { setShowModal(false); setEditingNote(null); }}>Cancel</button>
-              <button
-                className={`mic-btn ${isRecording ? "recording" : ""}`}
-                onClick={handleMicClick}
-              >
-                <FiMic />
-              </button>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <LanguageSelector
+                  selectedLanguage={selectedLanguage}
+                  onLanguageChange={handleLanguageChange}
+                />
+                <button
+                  className={`mic-btn ${isRecording ? "recording" : ""}`}
+                  onClick={handleMicClick}
+                  title={`Record audio (${selectedLanguage})`}
+                >
+                  <FiMic />
+                </button>
+              </div>
               <button className="modal-btn save" onClick={handleSave}>Save</button>
             </div>
           </div>

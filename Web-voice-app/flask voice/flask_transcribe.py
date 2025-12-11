@@ -28,6 +28,65 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Enable CORS
 
+# Supported languages for Google Speech Recognition
+# Format: language code (e.g., 'en-US', 'es-ES', 'fr-FR')
+# See: https://cloud.google.com/speech-to-text/docs/languages
+SUPPORTED_LANGUAGES = {
+    'en-US': 'English (United States)',
+    'en-GB': 'English (United Kingdom)',
+    'es-ES': 'Spanish (Spain)',
+    'es-MX': 'Spanish (Mexico)',
+    'fr-FR': 'French (France)',
+    'de-DE': 'German (Germany)',
+    'it-IT': 'Italian (Italy)',
+    'pt-BR': 'Portuguese (Brazil)',
+    'pt-PT': 'Portuguese (Portugal)',
+    'ru-RU': 'Russian (Russia)',
+    'ja-JP': 'Japanese (Japan)',
+    'ko-KR': 'Korean (Korea)',
+    'zh-CN': 'Chinese (Simplified, China)',
+    'zh-TW': 'Chinese (Traditional, Taiwan)',
+    'ar-SA': 'Arabic (Saudi Arabia)',
+    'ar-EG': 'Arabic (Egypt)',
+    'hi-IN': 'Hindi (India)',
+    'nl-NL': 'Dutch (Netherlands)',
+    'pl-PL': 'Polish (Poland)',
+    'tr-TR': 'Turkish (Turkey)',
+    'sv-SE': 'Swedish (Sweden)',
+    'da-DK': 'Danish (Denmark)',
+    'no-NO': 'Norwegian (Norway)',
+    'fi-FI': 'Finnish (Finland)',
+    'cs-CZ': 'Czech (Czech Republic)',
+    'hu-HU': 'Hungarian (Hungary)',
+    'ro-RO': 'Romanian (Romania)',
+    'th-TH': 'Thai (Thailand)',
+    'vi-VN': 'Vietnamese (Vietnam)',
+    'id-ID': 'Indonesian (Indonesia)',
+    'ms-MY': 'Malay (Malaysia)',
+    'he-IL': 'Hebrew (Israel)',
+    'uk-UA': 'Ukrainian (Ukraine)',
+    'el-GR': 'Greek (Greece)',
+}
+
+def validate_language(language_code):
+    """Validate if language code is supported."""
+    # Handle None, empty string, or whitespace-only strings
+    if not language_code or (isinstance(language_code, str) and not language_code.strip()):
+        return 'en-US', None
+    # Strip whitespace and normalize
+    language_code = language_code.strip() if isinstance(language_code, str) else language_code
+    if language_code in SUPPORTED_LANGUAGES:
+        return language_code, None
+    return None, f"Unsupported language code: {language_code}. Supported languages: {', '.join(SUPPORTED_LANGUAGES.keys())}"
+
+@app.route("/languages", methods=["GET"])
+def get_languages():
+    """Get list of supported languages."""
+    return jsonify({
+        "languages": SUPPORTED_LANGUAGES,
+        "default": "en-US"
+    }), 200
+
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
     try:
@@ -35,11 +94,37 @@ def transcribe():
         logger.info(f"Request method: {request.method}")
         logger.info(f"Content-Type: {request.content_type}")
         logger.info(f"Files received: {list(request.files.keys())}")
+        logger.info(f"Form data keys: {list(request.form.keys())}")
+        
+        # Get language parameter from form data or JSON
+        # For multipart/form-data (file uploads), use request.form
+        # For JSON requests, use request.json
+        language = None
+        if request.is_json:
+            language = request.json.get('language')
+        else:
+            # For multipart/form-data requests
+            language = request.form.get('language')
+        
+        logger.info(f"Received language parameter: {language}")
+        language, language_error = validate_language(language)
+        
+        if language_error:
+            logger.warning(f"Language validation error: {language_error}")
+            return jsonify({"error": language_error}), 400
+        
+        logger.info(f"Using language: {language} ({SUPPORTED_LANGUAGES.get(language, 'Unknown')})")
         
         # Check if request has files
         if not request.files:
             logger.error("No files in request")
-            return jsonify({"error": "No files provided in request"}), 400
+            logger.error(f"Request content type: {request.content_type}")
+            logger.error(f"Request form keys: {list(request.form.keys())}")
+            return jsonify({
+                "error": "No files provided in request",
+                "content_type": request.content_type,
+                "form_keys": list(request.form.keys())
+            }), 400
         
         # Check if audio file is present
         if "audio" not in request.files:
@@ -92,12 +177,16 @@ def transcribe():
                 audio = recognizer.record(source)
                 logger.info(f"Audio recorded: {len(audio.frame_data)} bytes")
             
-            # Transcribe audio
-            logger.info("Starting transcription...")
-            text = recognizer.recognize_google(audio, language="en-US")
+            # Transcribe audio with specified language
+            logger.info(f"Starting transcription with language: {language}...")
+            text = recognizer.recognize_google(audio, language=language)
             logger.info(f"Transcription successful: {text[:50]}...")
             
-            return jsonify({"text": text})
+            return jsonify({
+                "text": text,
+                "language": language,
+                "language_name": SUPPORTED_LANGUAGES.get(language, "Unknown")
+            })
         
         except sr.UnknownValueError:
             logger.error("Could not understand audio")
@@ -138,7 +227,12 @@ def transcribe():
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint"""
-    return jsonify({"status": "healthy", "message": "Transcription service is running"}), 200
+    return jsonify({
+        "status": "healthy",
+        "message": "Transcription service is running",
+        "supported_languages_count": len(SUPPORTED_LANGUAGES),
+        "default_language": "en-US"
+    }), 200
 
 if __name__ == "__main__":
     print("=" * 60)
@@ -147,6 +241,7 @@ if __name__ == "__main__":
     print("Starting server on http://localhost:5003")
     print("Endpoints:")
     print("  POST /transcribe - Transcribe audio file from microphone")
+    print("  GET  /languages - Get supported languages")
     print("  GET  /health - Health check")
     print("=" * 60)
     app.run(host='0.0.0.0', port=5003, debug=True)
