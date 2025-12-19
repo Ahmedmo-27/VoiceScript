@@ -12,10 +12,12 @@ class AdminController {
       
       // Get transcription statistics
       const transcriptionStats = await FeedbackModel.getStatistics();
-      const transcriptionStatsTable = await FeedbackModel.getTranscriptionStats();
       
       // Get note statistics
       const noteStats = await AdminController.getNoteStatistics();
+      
+      // Get notifications/alerts data
+      const notificationsData = await AdminController.getNotifications();
       
       // Get feedback statistics
       const feedbackStats = await FeedbackModel.getStatistics();
@@ -54,6 +56,7 @@ class AdminController {
           positiveFeedbacks: feedbackStats.positive_feedbacks || 0,
           negativeFeedbacks: feedbackStats.negative_feedbacks || 0,
         },
+        notifications: notificationsData,
       };
 
       return res.status(200).json(dashboardData);
@@ -175,6 +178,100 @@ class AdminController {
           
           resolve(fullUsage);
         }
+      });
+    });
+  }
+
+  // Get notifications/alerts based on real data
+  static async getNotifications() {
+    return new Promise((resolve, reject) => {
+      const notifications = [];
+      
+      // Query 1: Check today's usage vs yesterday's usage
+      const usageQuery = `SELECT 
+        (SELECT COUNT(*) FROM notes WHERE DATE(created_at) = CURDATE()) as todayNotes,
+        (SELECT COUNT(*) FROM notes WHERE DATE(created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)) as yesterdayNotes`;
+      
+      db.query(usageQuery, [], (err, usageResult) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        const todayNotes = usageResult[0]?.todayNotes || 0;
+        const yesterdayNotes = usageResult[0]?.yesterdayNotes || 0;
+        
+        // Calculate usage change percentage
+        if (yesterdayNotes > 0) {
+          const changePercent = Math.round(((todayNotes - yesterdayNotes) / yesterdayNotes) * 100);
+          if (changePercent > 10) {
+            notifications.push({
+              type: 'warning',
+              title: 'High Traffic',
+              message: `Voice usage increased by ${changePercent}% today.`
+            });
+          } else if (changePercent < -20) {
+            notifications.push({
+              type: 'info',
+              title: 'Low Activity',
+              message: `Voice usage decreased by ${Math.abs(changePercent)}% today.`
+            });
+          }
+        }
+        
+        // Query 2: Check error rate
+        const errorQuery = `SELECT 
+          COALESCE(SUM(error_count), 0) as totalErrors,
+          COALESCE(SUM(total_words), 0) as totalWords
+          FROM feedback 
+          WHERE DATE(created_at) = CURDATE()`;
+        
+        db.query(errorQuery, [], (err, errorResult) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          
+          const totalErrors = errorResult[0]?.totalErrors || 0;
+          const totalWords = errorResult[0]?.totalWords || 0;
+          const errorRate = totalWords > 0 ? (totalErrors / totalWords) * 100 : 0;
+          
+          if (errorRate > 5) {
+            notifications.push({
+              type: 'danger',
+              title: 'Error Spike',
+              message: `High error rate detected: ${errorRate.toFixed(1)}% of transcriptions have errors.`
+            });
+          }
+          
+          // Query 3: Check new user registrations
+          const newUsersQuery = `SELECT COUNT(*) as newUsers FROM users WHERE DATE(created_at) = CURDATE()`;
+          
+          db.query(newUsersQuery, [], (err, newUsersResult) => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            
+            const newUsers = newUsersResult[0]?.newUsers || 0;
+            if (newUsers > 0) {
+              notifications.push({
+                type: 'success',
+                title: 'New Registrations',
+                message: `${newUsers} new user${newUsers > 1 ? 's' : ''} registered today.`
+              });
+            }
+            
+            // Always add system status
+            notifications.push({
+              type: 'success',
+              title: 'System Status',
+              message: 'All services running normally.'
+            });
+            
+            resolve(notifications);
+          });
+        });
       });
     });
   }

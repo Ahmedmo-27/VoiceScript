@@ -3,7 +3,7 @@
   display: flex;
   height: 100vh;
   font-family: "Inter", sans-serif;
-  background: #f5f6fa;
+  background: #f5f7ff;
 }
 
 /* ---------------------- SIDEBAR ---------------------- */
@@ -11,7 +11,7 @@
   width: 260px;
   background: #ffffff;
   padding: 30px 20px;
-  border-right: 1px solid #e3e3e3;
+  border-right: 1px solid #d4d9ff;
   display: flex;
   flex-direction: column;
 }
@@ -35,7 +35,7 @@
   margin-bottom: 6px;
   font-size: 15px;
   border-radius: 10px;
-  color: #333;
+  color: #1a1a2e;
   cursor: pointer;
   transition: 0.2s;
 }
@@ -56,23 +56,24 @@
   display: block;
   padding-top: 6px;
   padding-bottom: 6px;
-  color: #555;
+  color: #4a4a6a;
   font-size: 14px;
 }
 
 /* PLUS BUTTON */
 .adm-add-btn {
-  background: #f1f1f1;
+  background: #f0f3ff;
   border: none;
   padding: 12px;
   border-radius: 12px;
   cursor: pointer;
   font-size: 20px;
   transition: 0.2s;
+  color: #3b57ff;
 }
 
 .adm-add-btn:hover {
-  background: #e4e4e4;
+  background: #e0e5ff;
 }
 
 /* ---------------------- MAIN PANEL ---------------------- */
@@ -145,5 +146,5 @@
 
 .user-date {
   font-weight: 600;
-  color: #333;
+  color: #1a1a2e;
 }

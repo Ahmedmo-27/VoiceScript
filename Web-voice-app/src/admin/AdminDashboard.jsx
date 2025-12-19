@@ -12,6 +12,9 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts";
 import {
   FaUsers,
@@ -27,13 +30,15 @@ import {
 import { FiLogOut } from "react-icons/fi";
 import API_CONFIG from "../config/api";
 
+const logoImage = "/VoiceScript Logo1.png";
+
 const THEMES = {
   primary: "#3b57ff",
-  secondary: "#8884d8",
+  secondary: "#6f42c1",
   success: "#4caf50",
   danger: "#f44336",
   warning: "#ff9800",
-  muted: "#777",
+  muted: "#7a7a9a",
 };
 
 /* ---------------- KPI CARDS ---------------- */
@@ -195,14 +200,12 @@ function AdminPage() {
     <div className="adm-container">
       {/* SIDEBAR */}
       <aside className="adm-sidebar">
-        <div className="adm-logo">VoiceScript</div>
+      <div className="logo">
+          <img src={logoImage} alt="VoiceScript Logo" className="logo-img" />
+        </div>
         <nav className="adm-nav">
           <div className="adm-link active">Dashboard</div>
-          <div className="adm-link">Users</div>
-          <div className="adm-link">Analytics</div>
-          <div className="adm-link">Settings</div>
         </nav>
-        <button className="adm-add-btn">+</button>
       </aside>
 
       {/* MAIN */}
@@ -296,47 +299,61 @@ function AdminPage() {
             <KpiCards kpis={kpis} />
 
             {/* NOTIFICATIONS & ALERTS */}
-<div className="user-list" style={{ marginBottom: 35 }}>
-  <h3 className="section-title">Notifications & Alerts</h3>
-
-  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    <div
-      style={{
-        padding: "12px 16px",
-        borderRadius: 10,
-        background: "#fff7e6",
-        borderLeft: `6px solid ${THEMES.warning}`,
-      }}
-    >
-      <FaExclamationTriangle color={THEMES.warning} />{" "}
-      <strong>High Traffic:</strong> Voice usage increased by 18% today.
-    </div>
-
-    <div
-      style={{
-        padding: "12px 16px",
-        borderRadius: 10,
-        background: "#e8f5e9",
-        borderLeft: `6px solid ${THEMES.success}`,
-      }}
-    >
-      <FaServer color={THEMES.success} />{" "}
-      <strong>System Stable:</strong> All services running normally.
-    </div>
-
-    <div
-      style={{
-        padding: "12px 16px",
-        borderRadius: 10,
-        background: "#fdecea",
-        borderLeft: `6px solid ${THEMES.danger}`,
-      }}
-    >
-      <FaExclamationTriangle color={THEMES.danger} />{" "}
-      <strong>Error Spike:</strong> Temporary increase in failed voice commands.
-    </div>
-  </div>
-</div>
+            {analytics.notifications && analytics.notifications.length > 0 && (
+              <div className="user-list" style={{ marginBottom: 35 }}>
+                <h3 className="section-title">Notifications & Alerts</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {analytics.notifications.map((notification, index) => {
+                    const getNotificationStyle = (type) => {
+                      switch (type) {
+                        case 'warning':
+                          return {
+                            background: "#fff7e6",
+                            borderColor: THEMES.warning,
+                            icon: <FaExclamationTriangle color={THEMES.warning} />,
+                          };
+                        case 'danger':
+                          return {
+                            background: "#fdecea",
+                            borderColor: THEMES.danger,
+                            icon: <FaExclamationTriangle color={THEMES.danger} />,
+                          };
+                        case 'success':
+                          return {
+                            background: "#e8f5e9",
+                            borderColor: THEMES.success,
+                            icon: <FaServer color={THEMES.success} />,
+                          };
+                        case 'info':
+                        default:
+                          return {
+                            background: "#e3f2fd",
+                            borderColor: THEMES.primary,
+                            icon: <FaServer color={THEMES.primary} />,
+                          };
+                      }
+                    };
+                    
+                    const style = getNotificationStyle(notification.type);
+                    
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          padding: "12px 16px",
+                          borderRadius: 10,
+                          background: style.background,
+                          borderLeft: `6px solid ${style.borderColor}`,
+                        }}
+                      >
+                        {style.icon}{" "}
+                        <strong>{notification.title}:</strong> {notification.message}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
 
             {/* USER STATS */}
@@ -387,6 +404,162 @@ function AdminPage() {
               </ResponsiveContainer>
             </div>
 
+            {/* FEEDBACK DISTRIBUTION PIE CHART */}
+            {analytics.transcriptionStats && (
+              <div className="user-list" style={{ marginBottom: 35 }}>
+                <h3 className="section-title">Feedback Distribution</h3>
+                {(analytics.transcriptionStats.positiveFeedbacks > 0 || analytics.transcriptionStats.negativeFeedbacks > 0) ? (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: "Positive", value: analytics.transcriptionStats.positiveFeedbacks || 0, color: THEMES.success },
+                              { name: "Negative", value: analytics.transcriptionStats.negativeFeedbacks || 0, color: THEMES.danger },
+                            ].filter(item => item.value > 0)}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={60}
+                            outerRadius={100}
+                            paddingAngle={5}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          >
+                            {[
+                              { name: "Positive", value: analytics.transcriptionStats.positiveFeedbacks || 0, color: THEMES.success },
+                              { name: "Negative", value: analytics.transcriptionStats.negativeFeedbacks || 0, color: THEMES.danger },
+                            ].filter(item => item.value > 0).map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "center", gap: 40, marginTop: 10 }}>
+                      <div style={{ textAlign: "center" }}>
+                        <span style={{ color: THEMES.success, fontWeight: 700, fontSize: 24 }}>
+                          {analytics.transcriptionStats.positiveFeedbacks || 0}
+                        </span>
+                        <p style={{ margin: 0, color: THEMES.muted }}>Positive Feedbacks</p>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <span style={{ color: THEMES.danger, fontWeight: 700, fontSize: 24 }}>
+                          {analytics.transcriptionStats.negativeFeedbacks || 0}
+                        </span>
+                        <p style={{ margin: 0, color: THEMES.muted }}>Negative Feedbacks</p>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <span style={{ color: THEMES.primary, fontWeight: 700, fontSize: 24 }}>
+                          {analytics.transcriptionStats.totalFeedbacks || 0}
+                        </span>
+                        <p style={{ margin: 0, color: THEMES.muted }}>Total Feedbacks</p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ 
+                    textAlign: "center", 
+                    padding: "40px 20px",
+                    color: THEMES.muted,
+                    background: "#f8f9fa",
+                    borderRadius: 12
+                  }}>
+                    <p style={{ margin: 0, fontSize: 16 }}>No feedback data available yet.</p>
+                    <p style={{ margin: "8px 0 0", fontSize: 14 }}>Feedback will appear here once users submit transcription feedback.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TRANSCRIPTION STATS SUMMARY */}
+            {analytics.transcriptionStats && (
+              <div className="user-list" style={{ marginBottom: 35 }}>
+                <h3 className="section-title">Transcription Statistics</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 20 }}>
+                  <div style={{ padding: 20, background: "#f0f4ff", borderRadius: 12, textAlign: "center" }}>
+                    <h2 style={{ margin: 0, color: THEMES.primary }}>{analytics.transcriptionStats.overallAccuracy}%</h2>
+                    <p style={{ margin: "5px 0 0", color: THEMES.muted }}>Overall Accuracy</p>
+                  </div>
+                  <div style={{ padding: 20, background: "#fff7e6", borderRadius: 12, textAlign: "center" }}>
+                    <h2 style={{ margin: 0, color: THEMES.warning }}>{analytics.transcriptionStats.totalWords?.toLocaleString() || 0}</h2>
+                    <p style={{ margin: "5px 0 0", color: THEMES.muted }}>Total Words Processed</p>
+                  </div>
+                  <div style={{ padding: 20, background: "#fdecea", borderRadius: 12, textAlign: "center" }}>
+                    <h2 style={{ margin: 0, color: THEMES.danger }}>{analytics.transcriptionStats.totalErrors?.toLocaleString() || 0}</h2>
+                    <p style={{ margin: "5px 0 0", color: THEMES.muted }}>Total Errors</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* DETAILED USER TABLE */}
+            {analytics.userStatistics && analytics.userStatistics.length > 0 && (
+              <div className="user-list" style={{ marginBottom: 35 }}>
+                <h3 className="section-title">All Users</h3>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                    <thead>
+                      <tr style={{ background: "#f0f4ff", textAlign: "left" }}>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Username</th>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Email</th>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Role</th>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Notes</th>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Feedbacks</th>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Accuracy</th>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analytics.userStatistics.map((user) => (
+                        <tr key={user.id} style={{ borderBottom: "1px solid #e8ecff" }}>
+                          <td style={{ padding: "12px 10px" }}>{user.username}</td>
+                          <td style={{ padding: "12px 10px" }}>{user.email}</td>
+                          <td style={{ padding: "12px 10px" }}>
+                            <span
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 20,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                background: user.role === "admin" ? THEMES.secondary : "#e8ecff",
+                                color: user.role === "admin" ? "#fff" : THEMES.primary,
+                              }}
+                            >
+                              {user.role || "user"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 10px" }}>{user.totalNotes || 0}</td>
+                          <td style={{ padding: "12px 10px" }}>{user.totalFeedbacks || 0}</td>
+                          <td style={{ padding: "12px 10px" }}>
+                            <span style={{ color: user.avgAccuracy >= 90 ? THEMES.success : user.avgAccuracy >= 70 ? THEMES.warning : THEMES.danger }}>
+                              {user.avgAccuracy?.toFixed(1) || 100}%
+                            </span>
+                          </td>
+                          <td style={{ padding: "12px 10px" }}>
+                            <span
+                              style={{
+                                padding: "4px 10px",
+                                borderRadius: 20,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                background: user.isActive ? "#e8f5e9" : "#fdecea",
+                                color: user.isActive ? THEMES.success : THEMES.danger,
+                              }}
+                            >
+                              {user.isActive ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* TOP USERS - Show from userStatistics if available */}
             {analytics.userStatistics && analytics.userStatistics.length > 0 && (
               <div className="user-list">
@@ -401,7 +574,7 @@ function AdminPage() {
                         display: "flex",
                         justifyContent: "space-between",
                         padding: "10px 0",
-                        borderBottom: "1px solid #eee",
+                        borderBottom: "1px solid #d4d9ff",
                       }}
                     >
                       <span>{u.username || u.email}</span>
