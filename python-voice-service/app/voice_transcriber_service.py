@@ -7,6 +7,7 @@ Handles the actual speech-to-text conversion with multiple fallback options.
 import app.compat  # noqa: F401
 
 import logging
+import time
 import speech_recognition as sr
 from typing import Dict, Optional, Any
 import config
@@ -120,7 +121,10 @@ class VoiceTranscriberService:
         for method_name, method_func in recognition_methods:
             try:
                 logger.debug(f"Trying {method_name} recognition")
+                start_time = time.time()
                 text = method_func(audio_data, language)
+                elapsed_time = time.time() - start_time
+                logger.debug(f"{method_name} recognition took {elapsed_time:.2f} seconds")
                 
                 if text:
                     logger.info(f"Successfully transcribed using {method_name}")
@@ -138,13 +142,17 @@ class VoiceTranscriberService:
                 
             except sr.RequestError as e:
                 error_msg = f"{method_name} recognition error: {str(e)}"
+                error_str = str(e).lower()
                 logger.warning(error_msg)
                 last_error = error_msg
+                # For network errors, log more details and try next method
+                if any(keyword in error_str for keyword in ['timeout', 'connection', 'network', 'unavailable', '503', '502', '504']):
+                    logger.warning(f"Network error with {method_name}, trying fallback methods...")
                 continue
                 
             except Exception as e:
                 error_msg = f"{method_name} unexpected error: {str(e)}"
-                logger.warning(error_msg)
+                logger.warning(error_msg, exc_info=True)
                 last_error = error_msg
                 continue
         
@@ -157,23 +165,54 @@ class VoiceTranscriberService:
     def _recognize_google(
         self,
         audio_data: sr.AudioData,
-        language: str
+        language: str,
+        max_retries: int = 2,
+        retry_delay: float = 1.0
     ) -> str:
         """
         Recognize speech using Google Speech Recognition (free, requires internet).
+        Includes retry logic for transient network errors.
         
         Args:
             audio_data: AudioData object
             language: Language code
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay between retries in seconds
             
         Returns:
             str: Transcribed text
+            
+        Raises:
+            sr.RequestError: If recognition fails after all retries
         """
-        return self.recognizer.recognize_google(
-            audio_data,
-            language=language,
-            show_all=False
-        )
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    logger.info(f"Retrying Google recognition (attempt {attempt + 1}/{max_retries + 1})...")
+                    time.sleep(retry_delay * attempt)  # Exponential backoff
+                
+                return self.recognizer.recognize_google(
+                    audio_data,
+                    language=language,
+                    show_all=False
+                )
+            except sr.RequestError as e:
+                error_str = str(e).lower()
+                last_error = e
+                # Retry on network-related errors
+                if any(keyword in error_str for keyword in ['timeout', 'connection', 'network', 'unavailable', '503', '502', '504']):
+                    if attempt < max_retries:
+                        logger.warning(f"Network error on attempt {attempt + 1}: {str(e)}. Retrying...")
+                        continue
+                # Don't retry on other errors (like API key issues)
+                raise
+            except Exception as e:
+                # Don't retry on unexpected errors
+                raise
+        
+        # If we get here, all retries failed
+        raise last_error if last_error else sr.RequestError("Google recognition failed after retries")
     
     def _recognize_google_cloud(
         self,

@@ -26,7 +26,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS
+# Enable CORS with explicit configuration for all origins
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Supported languages for Google Speech Recognition
 # Format: language code (e.g., 'en-US', 'es-ES', 'fr-FR')

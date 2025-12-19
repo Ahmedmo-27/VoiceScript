@@ -5,6 +5,9 @@ Handles HTTP requests for audio transcription.
 
 import os
 import logging
+import time
+import uuid
+from pathlib import Path
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 import config
@@ -42,6 +45,54 @@ def health_check():
             message=f'Service error: {str(e)}'
         )
         return jsonify(response.to_dict()), 500
+
+
+@bp.route('/analyze-file', methods=['POST'])
+def analyze_file():
+    """
+    Analyze file to determine if conversion is needed and estimate processing time.
+    
+    Request:
+        - Multipart form data with 'audio' file field
+    
+    Returns:
+        JSON response with file analysis metadata
+    """
+    try:
+        if 'audio' not in request.files:
+            return jsonify({"error": "No audio file provided"}), 400
+        
+        audio_file = request.files['audio']
+        if audio_file.filename == '':
+            return jsonify({"error": "No file selected"}), 400
+        
+        # Check file extension
+        filename = secure_filename(audio_file.filename)
+        file_ext = Path(filename).suffix.lower()
+        is_wav = file_ext == '.wav'
+        
+        # Get file size
+        audio_file.seek(0, os.SEEK_END)
+        file_size_bytes = audio_file.tell()
+        audio_file.seek(0)  # Reset to beginning
+        file_size_mb = file_size_bytes / (1024 * 1024)
+        
+        # Estimate processing times
+        estimated_conversion_time = 0 if is_wav else max(1.0, file_size_mb * 1.0)
+        estimated_transcription_time = max(2.0, file_size_mb * 5.0)
+        
+        return jsonify({
+            "needsConversion": not is_wav,
+            "fileExtension": file_ext,
+            "fileSizeMB": round(file_size_mb, 2),
+            "estimatedConversionTime": round(estimated_conversion_time, 2),
+            "estimatedTranscriptionTime": round(estimated_transcription_time, 2),
+            "estimatedTotalTime": round(estimated_conversion_time + estimated_transcription_time, 2)
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error analyzing file: {str(e)}")
+        return jsonify({"error": f"Error analyzing file: {str(e)}"}), 500
 
 
 @bp.route('/transcribe', methods=['POST'])
@@ -177,12 +228,21 @@ def transcribe_file():
         
         logger.info(f"Received file transcription request: {audio_file.filename} (language: {language})")
         
-        # Save uploaded file
-        filename = secure_filename(audio_file.filename)
+        # Save uploaded file with unique filename to avoid conflicts
+        original_filename = secure_filename(audio_file.filename)
+        # Add timestamp and UUID to ensure uniqueness for concurrent requests
+        unique_id = f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+        file_ext = Path(original_filename).suffix or '.tmp'
+        filename = f"{Path(original_filename).stem}_{unique_id}{file_ext}"
         upload_path = os.path.join(config.UPLOAD_FOLDER, filename)
         audio_file.save(upload_path)
         
-        temp_file = None
+        # Get file metadata before processing
+        file_ext = Path(filename).suffix.lower()
+        is_wav = file_ext == '.wav'
+        file_size_mb = os.path.getsize(upload_path) / (1024 * 1024)
+        
+        processed_file = None
         try:
             # Process audio for transcription
             processed_file = AudioProcessor.process_audio_for_transcription(upload_path)
@@ -193,30 +253,43 @@ def transcribe_file():
                 language=language
             )
             
+            # Build response with metadata (similar to old service format)
+            response_dict = {
+                'success': result['success'],
+                'language': language
+            }
+            
+            if result['success']:
+                response_dict['text'] = result.get('text')
+                if result.get('confidence') is not None:
+                    response_dict['confidence'] = result.get('confidence')
+                # Add metadata for compatibility with backend
+                response_dict['metadata'] = {
+                    'needsConversion': not is_wav,
+                    'fileExtension': file_ext,
+                    'fileSizeMB': round(file_size_mb, 2),
+                    'estimatedConversionTime': round(0 if is_wav else max(1.0, file_size_mb * 1.0), 2),
+                    'estimatedTranscriptionTime': round(max(2.0, file_size_mb * 5.0), 2),
+                    'estimatedTotalTime': round((0 if is_wav else max(1.0, file_size_mb * 1.0)) + max(2.0, file_size_mb * 5.0), 2)
+                }
+            else:
+                response_dict['error'] = result.get('error')
+            
             # Clean up files
             if config.CLEANUP_TEMP_FILES:
                 if processed_file != upload_path:
                     AudioProcessor.cleanup_temp_file(processed_file)
                 AudioProcessor.cleanup_temp_file(upload_path)
             
-            # Return response
-            response = TranscriptionResponse(
-                success=result['success'],
-                text=result.get('text'),
-                error=result.get('error'),
-                language=language,
-                confidence=result.get('confidence')
-            )
-            
             status_code = 200 if result['success'] else 500
-            return jsonify(response.to_dict()), status_code
+            return jsonify(response_dict), status_code
             
         except Exception as e:
-            logger.error(f"File transcription error: {str(e)}")
+            logger.error(f"File transcription error: {str(e)}", exc_info=True)
             
-            # Clean up on error
-            if temp_file and os.path.exists(temp_file):
-                AudioProcessor.cleanup_temp_file(temp_file)
+            # Clean up on error - ensure all files are cleaned up
+            if processed_file and os.path.exists(processed_file) and processed_file != upload_path:
+                AudioProcessor.cleanup_temp_file(processed_file)
             if os.path.exists(upload_path):
                 AudioProcessor.cleanup_temp_file(upload_path)
             
