@@ -6,8 +6,10 @@ Run this file to start the server.
 from app import create_app
 import config
 
+# Create app instance for gunicorn
+app = create_app()
+
 if __name__ == '__main__':
-    app = create_app()
     app.run(
         host=config.FLASK_HOST,
         port=config.FLASK_PORT,
