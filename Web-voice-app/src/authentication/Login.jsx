@@ -25,6 +25,7 @@ export default function Login() {
       const response = await fetch(`${API_CONFIG.BACKEND_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", // Include cookies for session
         body: JSON.stringify({ email, password }),
       });
 
@@ -33,21 +34,15 @@ export default function Login() {
       if (!response.ok) {
         setError(data.message || "Login failed");
       } else {
-        // Login successful
+        // Login successful - session is stored on server
         alert(`Welcome ${data.username}!`);
-        // Save user data in localStorage
-        localStorage.setItem("user", JSON.stringify({
-          userId: data.userId,
-          username: data.username,
-          email: data.email
-        }));
         navigate("/"); // redirect after login
       }
     } catch (err) {
-  console.error("Fetch/network error:", err);
-  setError("Server error. Try again later.");
-}
- finally {
+      console.error("Fetch/network error:", err);
+      setError("Server error. Try again later.");
+    }
+    finally {
       setLoading(false);
     }
   };

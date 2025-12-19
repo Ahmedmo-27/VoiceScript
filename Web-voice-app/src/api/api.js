@@ -12,10 +12,12 @@ import API_CONFIG from "../config/api";
  */
 export const fetchNotes = async (userId, categoryId = null) => {
   try {
-    const url = categoryId 
+    const url = categoryId
       ? `${API_CONFIG.BACKEND_URL}/api/notes/${userId}?categoryId=${categoryId}`
       : `${API_CONFIG.BACKEND_URL}/api/notes/${userId}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      credentials: "include", // Include cookies for session
+    });
     if (response.ok) {
       const data = await response.json();
       return data;
@@ -36,7 +38,9 @@ export const fetchNotes = async (userId, categoryId = null) => {
  */
 export const fetchCategories = async (userId) => {
   try {
-    const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories/${userId}`);
+    const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories/${userId}`, {
+      credentials: "include", // Include cookies for session
+    });
     if (response.ok) {
       const data = await response.json();
       return data;
@@ -69,6 +73,7 @@ export const createCategory = async (userId, categoryName) => {
       headers: {
         "Content-Type": "application/json",
       },
+      credentials: "include", // Include cookies for session
       body: JSON.stringify({
         userId: userId,
         name: categoryName.trim(),
@@ -100,7 +105,9 @@ export const searchNotes = async (userId, query) => {
   }
 
   try {
-    const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/search/${userId}?q=${encodeURIComponent(query)}`);
+    const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/search/${userId}?q=${encodeURIComponent(query)}`, {
+      credentials: "include", // Include cookies for session
+    });
     if (response.ok) {
       const data = await response.json();
       return data;

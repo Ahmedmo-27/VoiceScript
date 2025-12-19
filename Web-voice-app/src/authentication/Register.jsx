@@ -20,6 +20,7 @@ export default function Register() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include", // Include cookies for session
         body: JSON.stringify({
           username: username,
           email: email,
@@ -35,7 +36,7 @@ export default function Register() {
         return;
       }
 
-      alert("Account created successfully!");
+      alert("Account created successfully! Please login.");
 
       // Clear fields
       setUsername("");

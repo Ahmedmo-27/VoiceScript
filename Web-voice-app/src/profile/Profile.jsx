@@ -18,20 +18,39 @@ export default function Profile() {
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    const userData = localStorage.getItem("user");
-    if (!userData) {
-      navigate("/login");
-      return;
-    }
+    const fetchUser = async () => {
+      try {
+        // First get current user from session
+        const sessionResponse = await fetch(`${API_CONFIG.BACKEND_URL}/api/me`, {
+          credentials: "include", // Include cookies for session
+        });
 
-    const parsedUser = JSON.parse(userData);
-    setUser(parsedUser);
-    fetchUserProfile(parsedUser.userId);
+        if (!sessionResponse.ok) {
+          navigate("/login");
+          return;
+        }
+
+        const sessionUser = await sessionResponse.json();
+        setUser({
+          userId: sessionUser.userId,
+          username: sessionUser.username,
+          email: sessionUser.email
+        });
+        fetchUserProfile(sessionUser.userId);
+      } catch (error) {
+        console.error("Error fetching user session:", error);
+        navigate("/login");
+      }
+    };
+
+    fetchUser();
   }, [navigate]);
 
   const fetchUserProfile = async (userId) => {
     try {
-      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/user/${userId}`);
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/user/${userId}`, {
+        credentials: "include", // Include cookies for session
+      });
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
@@ -90,6 +109,7 @@ export default function Profile() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include", // Include cookies for session
         body: JSON.stringify(updateData),
       });
 
@@ -98,13 +118,6 @@ export default function Profile() {
         setUser(updatedUser);
         setEditing(false);
         setSuccess("Profile updated successfully!");
-        
-        // Update localStorage
-        localStorage.setItem("user", JSON.stringify({
-          userId: updatedUser.id,
-          username: updatedUser.username,
-          email: updatedUser.email,
-        }));
 
         // Clear password fields
         setFormData((prev) => ({

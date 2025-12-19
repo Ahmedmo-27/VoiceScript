@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const session = require("express-session");
 
 // Import routes
 const authRoutes = require("./routes/authRoutes");
@@ -8,8 +9,38 @@ const userRoutes = require("./routes/userRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 
 const app = express();
+
+// Session configuration
+app.use(session({
+  secret: process.env.SESSION_SECRET || "your-secret-key-change-in-production",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === "production", // Use secure cookies in production (HTTPS)
+    httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 app.use(express.json());
-app.use(cors());
+// CORS configuration - allow multiple origins for development
+const allowedOrigins = process.env.FRONTEND_URL 
+  ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+  : ["http://localhost:5173", "http://localhost:3000"]; // Vite and Create React App default ports
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true // Allow cookies to be sent
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Import database connection (this will initialize the connection)
@@ -39,6 +70,8 @@ app.listen(PORT, () => {
   console.log("Available routes:");
   console.log("  POST /register");
   console.log("  POST /login");
+  console.log("  POST /logout");
+  console.log("  GET  /api/me");
   console.log("  GET  /api/test");
   console.log("  GET  /api/notes/:userId");
   console.log("  GET  /api/notes/search/:userId?q=query");

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiMic, FiHome, FiFileText, FiUser, FiPlus, FiMapPin, FiEdit2, FiTrash2, FiCopy, FiMoon, FiSun, FiTag, FiUpload } from "react-icons/fi";
+import { FiMic, FiHome, FiFileText, FiUser, FiLogOut, FiPlus, FiMapPin, FiEdit2, FiTrash2, FiCopy, FiMoon, FiSun, FiTag, FiUpload } from "react-icons/fi";
 import { useTheme } from "../context/ThemeContext";
 import { highlightText } from "../utils/highlightText";
 import VoiceCommandButton from "../components/VoiceCommandButton";
@@ -29,36 +29,119 @@ export default function HomePage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showCategoryInput, setShowCategoryInput] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [hoveredCategoryId, setHoveredCategoryId] = useState(null);
+  const [showColorPicker, setShowColorPicker] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState({ type: null, id: null, name: null });
   const [uploadProgress, setUploadProgress] = useState("");
   const [uploadPercentage, setUploadPercentage] = useState(0);
   const [uploadMetadata, setUploadMetadata] = useState(null);
+  const [draggedNote, setDraggedNote] = useState(null);
+  const [dragOverSection, setDragOverSection] = useState(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState(null);
+
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
     // Load language preference from localStorage, default to en-US
     return localStorage.getItem('transcriptionLanguage') || 'en-US';
   });
   const fileInputRef = useRef(null);
 
-  // Get user from localStorage
+  // Get user from session
   useEffect(() => {
-    const userData = localStorage.getItem("user");
-    if (userData) {
-      const parsedUser = JSON.parse(userData);
-      setUser(parsedUser);
-      fetchNotes(parsedUser.userId);
-      fetchCategories(parsedUser.userId);
-    } else {
-      navigate("/login");
-    }
+    const fetchUser = async () => {
+      try {
+        const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/me`, {
+          credentials: "include", // Include cookies for session
+        });
+
+        if (!response.ok) {
+          navigate("/login");
+          return;
+        }
+
+        const userData = await response.json();
+        setUser({
+          userId: userData.userId,
+          username: userData.username,
+          email: userData.email
+        });
+        fetchNotes(userData.userId);
+        fetchCategories(userData.userId);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        navigate("/login");
+      }
+    };
+
+    fetchUser();
   }, [navigate]);
+  //  Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // N -> 3shan new note
+      if (e.key === "n" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        openNewNoteModal();
+      }
+
+      // CTRL+K -> 3shan search
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const searchInput = document.querySelector(".search-input");
+        if (searchInput) searchInput.focus();
+      }
+
+      // CTRL+S -> 3shan save
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedNote, noteTitle, noteBody, noteColor]);
 
   // Save language preference to localStorage when it changes
   useEffect(() => {
     localStorage.setItem('transcriptionLanguage', selectedLanguage);
   }, [selectedLanguage]);
 
+  // Close color picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showColorPicker && !event.target.closest('.color-picker-container') && !event.target.closest('.color-picker-popup')) {
+        setShowColorPicker(null);
+      }
+    };
+
+    if (showColorPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showColorPicker]);
+
   const handleLanguageChange = (languageCode) => {
     setSelectedLanguage(languageCode);
+  };
+
+  // Toast notification system
+  const showToast = (message, type = "success") => {
+    const id = Date.now();
+    const toast = { id, message, type };
+    setToasts((prev) => [...prev, toast]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3000);
   };
 
   // Fetch notes from backend
@@ -78,12 +161,150 @@ export default function HomePage() {
   const handleCreateCategory = async () => {
     if (!newCategoryName.trim() || !user) return;
 
-    const category = await apiCreateCategory(user.userId, newCategoryName.trim());
-    if (category) {
-      setCategories([...categories, category]);
-      setNewCategoryName("");
-      setShowCategoryInput(false);
+    try {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          userId: user.userId,
+          name: newCategoryName.trim(),
+          color: "#007bff"
+        }),
+      });
+
+      if (response.ok) {
+        const category = await response.json();
+        setCategories([...categories, category]);
+        setNewCategoryName("");
+        setShowCategoryInput(false);
+        showToast("Category created successfully!", "success");
+      } else {
+        showToast("Failed to create category", "error");
+      }
+    } catch (error) {
+      console.error("Error creating category:", error);
+      showToast("Error creating category", "error");
     }
+  };
+
+  // Update category name
+  const handleUpdateCategoryName = async (categoryId, newName) => {
+    if (!newName.trim()) {
+      setEditingCategoryId(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories/${categoryId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+
+      if (response.ok) {
+        const updatedCategory = await response.json();
+        setCategories(categories.map(cat => cat.id === categoryId ? updatedCategory : cat));
+        setEditingCategoryId(null);
+        showToast("Category name updated successfully!", "success");
+      } else {
+        showToast("Failed to update category name", "error");
+      }
+    } catch (error) {
+      console.error("Error updating category:", error);
+      showToast("Error updating category name", "error");
+    }
+  };
+
+  // Color palette options
+  const colorPalette = [
+    "#007bff", "#28a745", "#ffc107", "#dc3545", "#6f42c1",
+    "#20c997", "#fd7e14", "#e83e8c", "#6c757d", "#17a2b8"
+  ];
+
+  // Update category color
+  const handleUpdateCategoryColor = async (categoryId, color) => {
+    try {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories/${categoryId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({ color }),
+      });
+
+      if (response.ok) {
+        const updatedCategory = await response.json();
+        setCategories(categories.map(cat => cat.id === categoryId ? updatedCategory : cat));
+        setShowColorPicker(null);
+        showToast("Category color updated successfully!", "success");
+      } else {
+        showToast("Failed to update category color", "error");
+      }
+    } catch (error) {
+      console.error("Error updating category color:", error);
+      showToast("Error updating category color", "error");
+    }
+  };
+
+  // Delete category
+  const handleDeleteCategory = (categoryId) => {
+    const category = categories.find(cat => cat.id === categoryId);
+    setItemToDelete({ type: "category", id: categoryId, name: category?.name || "this category" });
+    setShowDeleteModal(true);
+  };
+
+  // Confirm delete
+  const confirmDelete = async () => {
+    if (itemToDelete.type === "category") {
+      try {
+        const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/categories/${itemToDelete.id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+
+        if (response.ok) {
+          setCategories(categories.filter(cat => cat.id !== itemToDelete.id));
+          if (selectedCategoryId === itemToDelete.id) {
+            setSelectedCategoryId(null);
+          }
+          showToast("Category deleted successfully!", "success");
+        } else {
+          showToast("Failed to delete category", "error");
+        }
+      } catch (error) {
+        console.error("Error deleting category:", error);
+        showToast("Error deleting category", "error");
+      }
+    } else if (itemToDelete.type === "note") {
+      try {
+        const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/${itemToDelete.id}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+
+        if (response.ok) {
+          setNotes(notes.filter(n => n.id !== itemToDelete.id));
+          if (selectedNote?.id === itemToDelete.id) {
+            setSelectedNote(null);
+          }
+          showToast("Note deleted successfully!", "success");
+        } else {
+          showToast("Failed to delete note", "error");
+        }
+      } catch (error) {
+        console.error("Error deleting note:", error);
+        showToast("Error deleting note", "error");
+      }
+    }
+    setShowDeleteModal(false);
+    setItemToDelete({ type: null, id: null, name: null });
   };
 
   // Search notes
@@ -118,12 +339,16 @@ export default function HomePage() {
     }
   };
 
-  // Filter notes by pinned status
-  const { pinnedNotes, regularNotes } = useMemo(() => {
+  // Filter notes by pinned status and category
+  const { pinnedNotes, uncategorizedNotes, categorizedNotes } = useMemo(() => {
     const pinned = notes.filter(note => note.pinned);
-    const regular = notes.filter(note => !note.pinned);
-    return { pinnedNotes: pinned, regularNotes: regular };
+    const categorized = notes.filter(note => !note.pinned && note.category_id); // notes with category, unpinned
+    const uncategorized = notes.filter(note => !note.pinned && !note.category_id); // notes without category, unpinned
+    return { pinnedNotes: pinned, categorizedNotes: categorized, uncategorizedNotes: uncategorized };
   }, [notes]);
+
+
+
 
   const handleSave = async () => {
     if (!noteTitle.trim()) {
@@ -138,10 +363,10 @@ export default function HomePage() {
     }
 
     try {
-      const url = editingNote 
+      const url = editingNote
         ? `${API_CONFIG.BACKEND_URL}/api/notes/${editingNote.id}`
         : `${API_CONFIG.BACKEND_URL}/api/notes`;
-      
+
       const method = editingNote ? "PUT" : "POST";
 
       const response = await fetch(url, {
@@ -149,6 +374,7 @@ export default function HomePage() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include", // Include cookies for session
         body: JSON.stringify({
           userId: user.userId,
           title: noteTitle,
@@ -162,8 +388,10 @@ export default function HomePage() {
         const note = await response.json();
         if (editingNote) {
           setNotes(notes.map(n => n.id === note.id ? note : n));
+          showToast("Note updated successfully!", "success");
         } else {
           setNotes([note, ...notes]);
+          showToast("New note created successfully!", "success");
         }
         setShowModal(false);
         setEditingNote(null);
@@ -172,11 +400,11 @@ export default function HomePage() {
         setNoteColor("#ffffff");
       } else {
         const data = await response.json();
-        alert("Failed to save note: " + (data.message || "Unknown error"));
+        showToast("Failed to save note: " + (data.message || "Unknown error"), "error");
       }
     } catch (error) {
       console.error("Error saving note:", error);
-      alert("Error saving note. Please try again.");
+      showToast("Error saving note. Please try again.", "error");
     }
   };
 
@@ -189,28 +417,10 @@ export default function HomePage() {
     setShowModal(true);
   };
 
-  const handleDelete = async (noteId) => {
-    if (!window.confirm("Are you sure you want to delete this note?")) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/${noteId}`, {
-        method: "DELETE",
-      });
-
-      if (response.ok) {
-        setNotes(notes.filter(n => n.id !== noteId));
-        if (selectedNote?.id === noteId) {
-          setSelectedNote(null);
-        }
-      } else {
-        alert("Failed to delete note");
-      }
-    } catch (error) {
-      console.error("Error deleting note:", error);
-      alert("Error deleting note");
-    }
+  const handleDelete = (noteId) => {
+    const note = notes.find(n => n.id === noteId);
+    setItemToDelete({ type: "note", id: noteId, name: note?.title || "this note" });
+    setShowDeleteModal(true);
   };
 
   const handlePin = async (note) => {
@@ -220,6 +430,7 @@ export default function HomePage() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include", // Include cookies for session
         body: JSON.stringify({
           pinned: !note.pinned,
           categoryId: note.category_id,
@@ -232,10 +443,104 @@ export default function HomePage() {
         if (selectedNote?.id === updatedNote.id) {
           setSelectedNote(updatedNote);
         }
+        showToast(updatedNote.pinned ? "Note pinned!" : "Note unpinned!", "success");
+      } else {
+        showToast("Failed to update note", "error");
       }
     } catch (error) {
       console.error("Error pinning note:", error);
+      showToast("Error updating note", "error");
     }
+  };
+
+  // Move note to different section (pinned, category, or uncategorized)
+  const handleMoveNote = async (noteId, targetPinned, targetCategoryId) => {
+    try {
+      const note = notes.find(n => n.id === noteId);
+      if (!note) return;
+
+      // Don't update if nothing changed
+      if (note.pinned === targetPinned && note.category_id === targetCategoryId) {
+        return;
+      }
+
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/notes/${noteId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          pinned: targetPinned,
+          categoryId: targetCategoryId,
+        }),
+      });
+
+      if (response.ok) {
+        const updatedNote = await response.json();
+        setNotes(notes.map(n => n.id === updatedNote.id ? updatedNote : n));
+        if (selectedNote?.id === updatedNote.id) {
+          setSelectedNote(updatedNote);
+        }
+      } else {
+        console.error("Failed to move note");
+      }
+    } catch (error) {
+      console.error("Error moving note:", error);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e, note) => {
+    setDraggedNote(note);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/html", note.id);
+    // Add visual feedback
+    e.currentTarget.style.opacity = "0.5";
+  };
+
+  const handleDragEnd = (e) => {
+    e.currentTarget.style.opacity = "1";
+    setDraggedNote(null);
+    setDragOverSection(null);
+    setDragOverCategoryId(null);
+  };
+
+  const handleDragOver = (e, sectionType, categoryId = null) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverSection(sectionType);
+    setDragOverCategoryId(categoryId);
+  };
+
+  const handleDragLeave = (e) => {
+    // Only clear if we're actually leaving the drop zone
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setDragOverSection(null);
+      setDragOverCategoryId(null);
+    }
+  };
+
+  const handleDrop = (e, targetPinned, targetCategoryId) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!draggedNote) return;
+
+    // Determine target state
+    const finalPinned = targetPinned !== null ? targetPinned : false;
+    const finalCategoryId = targetCategoryId !== null ? targetCategoryId : null;
+
+    // Move the note
+    handleMoveNote(draggedNote.id, finalPinned, finalCategoryId);
+
+    // Reset drag state
+    setDraggedNote(null);
+    setDragOverSection(null);
+    setDragOverCategoryId(null);
   };
 
   const handleDuplicate = async (note) => {
@@ -245,6 +550,7 @@ export default function HomePage() {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include", // Include cookies for session
         body: JSON.stringify({
           userId: user.userId,
         }),
@@ -253,9 +559,13 @@ export default function HomePage() {
       if (response.ok) {
         const newNote = await response.json();
         setNotes([newNote, ...notes]);
+        showToast("Note duplicated successfully!", "success");
+      } else {
+        showToast("Failed to duplicate note", "error");
       }
     } catch (error) {
       console.error("Error duplicating note:", error);
+      showToast("Error duplicating note", "error");
     }
   };
 
@@ -266,6 +576,27 @@ export default function HomePage() {
   const handleProfileClick = () => {
     if (user) {
       navigate("/profile");
+    }
+  };
+
+  const handleLogoutClick = async () => {
+    try {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/logout`, {
+        method: "POST",
+        credentials: "include", // Include cookies for session
+      });
+
+      if (response.ok) {
+        setUser(null);
+        navigate("/login");
+      } else {
+        alert("Error logging out. Please try again.");
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Even if there's an error, clear local state and redirect
+      setUser(null);
+      navigate("/login");
     }
   };
 
@@ -285,7 +616,7 @@ export default function HomePage() {
         break;
       case "open":
         if (param) {
-          const note = notes.find(n => 
+          const note = notes.find(n =>
             n.title.toLowerCase().includes(param.toLowerCase())
           );
           if (note) {
@@ -338,11 +669,11 @@ export default function HomePage() {
           const wavBlob = encodeWAV(audioBuffer);
           const formData = new FormData();
           formData.append("audio", wavBlob, "recording.wav");
-          
+
           // Ensure language is set, default to en-US if not
           const languageToSend = selectedLanguage || 'en-US';
           formData.append("language", languageToSend);
-          
+
           console.log("Sending transcription request with language:", languageToSend);
           console.log("Audio blob size:", wavBlob.size, "bytes");
 
@@ -351,9 +682,9 @@ export default function HomePage() {
               method: "POST",
               body: formData,
             });
-            
+
             const data = await response.json();
-            
+
             if (!response.ok) {
               console.error("Transcription error:", data);
               console.error("Response status:", response.status);
@@ -361,7 +692,7 @@ export default function HomePage() {
               alert(`Transcription error: ${data.error || data.message || "Unknown error"}`);
               return;
             }
-            
+
             if (data.text) {
               setNoteBody(data.text);
             } else if (data.error) {
@@ -475,7 +806,7 @@ export default function HomePage() {
 
       // Use XMLHttpRequest to track actual upload progress
       const xhr = new XMLHttpRequest();
-      
+
       const uploadPromise = new Promise((resolve, reject) => {
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
@@ -483,19 +814,19 @@ export default function HomePage() {
             const uploadPercent = Math.round((e.loaded / e.total) * 20);
             setUploadPercentage(uploadPercent);
             setUploadProgress(`Uploading file... ${Math.round((e.loaded / e.total) * 100)}%`);
-            
+
             // When upload completes, start processing indicator
             if (e.loaded === e.total) {
               setUploadPercentage(20);
               setUploadProgress("Upload complete. Processing audio file...");
               processingStartTime = Date.now();
               processingProgress = 20; // Reset to 20%
-              
+
               // Start processing progress animation (20% to 90%)
               // This gives visual feedback while waiting for Flask to complete
               const maxProcessingProgress = 90;
               const processingDuration = 60000; // 60 seconds max
-              
+
               processingInterval = setInterval(() => {
                 if (processingStartTime) {
                   const elapsed = Date.now() - processingStartTime;
@@ -505,10 +836,10 @@ export default function HomePage() {
                     maxProcessingProgress,
                     20 + (elapsed / processingDuration) * 70
                   );
-                  
+
                   processingProgress = Math.max(processingProgress, targetProgress);
                   setUploadPercentage(Math.round(processingProgress));
-                  
+
                   // Update message based on elapsed time
                   const secondsElapsed = Math.floor(elapsed / 1000);
                   if (secondsElapsed < 5) {
@@ -530,7 +861,7 @@ export default function HomePage() {
             clearInterval(processingInterval);
             processingInterval = null;
           }
-          
+
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               const data = JSON.parse(xhr.responseText);
@@ -573,6 +904,7 @@ export default function HomePage() {
         });
 
         xhr.open('POST', `${API_CONFIG.BACKEND_URL}/api/notes/upload`);
+        xhr.withCredentials = true; // Include cookies for session
         xhr.send(formData);
       });
 
@@ -586,7 +918,8 @@ export default function HomePage() {
       if (data.note) {
         // Add the new note to the list
         setNotes([data.note, ...notes]);
-        
+        showToast("Audio uploaded and note created successfully!", "success");
+
         // Wait a bit longer to show metadata, then close
         setTimeout(() => {
           setIsUploading(false);
@@ -611,7 +944,7 @@ export default function HomePage() {
         clearInterval(processingInterval);
         processingInterval = null;
       }
-      alert("Error uploading file: " + error.message);
+      showToast("Error uploading file: " + error.message, "error");
       setIsUploading(false);
       setUploadProgress("");
       setUploadPercentage(0);
@@ -641,8 +974,8 @@ export default function HomePage() {
       <aside className="sidebar">
         <h2 className="logo">LOGO</h2>
         <nav className="sidebar-links">
-          <a 
-            className={!selectedNote ? "active" : ""} 
+          <a
+            className={!selectedNote ? "active" : ""}
             onClick={() => setSelectedNote(null)}
             style={{ cursor: "pointer" }}
           >
@@ -666,20 +999,27 @@ export default function HomePage() {
 
       <main className="main-content">
         <div className="top-bar">
-          <input 
-            type="text" 
-            placeholder="Search For Notes" 
+          <input
+            type="text"
+            placeholder="Search For Notes"
             className="search-input"
             value={searchTerm}
             onChange={handleSearchChange}
           />
           <div className="top-bar-actions">
+
             <button className="theme-toggle" onClick={toggleTheme} title="Toggle theme">
               {theme === "dark" ? <FiSun /> : <FiMoon />}
             </button>
+
             <div className="profile-icon" onClick={handleProfileClick} style={{ cursor: "pointer" }}>
               <FiUser />
             </div>
+
+            <div className="profile-icon" onClick={handleLogoutClick} style={{ cursor: "pointer" }}>
+              <FiLogOut />
+            </div>
+
           </div>
         </div>
 
@@ -692,13 +1032,38 @@ export default function HomePage() {
             All Notes
           </button>
           {categories.map((category) => (
-            <button
+            <div
               key={category.id}
-              className={`category-btn ${selectedCategoryId === category.id ? "active" : ""}`}
-              onClick={() => handleCategoryFilter(category.id)}
+              className="category-filter-item"
+              onMouseEnter={() => setHoveredCategoryId(category.id)}
+              onMouseLeave={() => setHoveredCategoryId(null)}
+              style={{ position: "relative", display: "inline-block" }}
             >
-              <FiTag /> {category.name}
-            </button>
+              <button
+                className={`category-btn ${selectedCategoryId === category.id ? "active" : ""}`}
+                onClick={() => handleCategoryFilter(category.id)}
+                style={{
+                  borderLeft: `4px solid ${category.color || "#007bff"}`,
+                  paddingLeft: "12px"
+                }}
+              >
+                <FiTag /> {category.name}
+              </button>
+              {hoveredCategoryId === category.id && (
+                <button
+                  className="category-delete-btn"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDeleteCategory(category.id);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  title="Delete category"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           ))}
           {showCategoryInput ? (
             <div className="category-input-container">
@@ -783,15 +1148,15 @@ export default function HomePage() {
               alignItems: "center",
               marginBottom: "10px"
             }}>
-              <span style={{ 
-                fontSize: "14px", 
+              <span style={{
+                fontSize: "14px",
                 color: "var(--text-primary)",
                 fontWeight: "500"
               }}>
                 {uploadProgress}
               </span>
-              <span style={{ 
-                fontSize: "14px", 
+              <span style={{
+                fontSize: "14px",
                 color: "var(--text-secondary)",
                 fontWeight: "600"
               }}>
@@ -812,7 +1177,7 @@ export default function HomePage() {
                 backgroundColor: "#007bff",
                 borderRadius: "4px",
                 transition: "width 0.3s ease",
-                background: uploadPercentage === 100 
+                background: uploadPercentage === 100
                   ? "linear-gradient(90deg, #28a745, #20c997)"
                   : "linear-gradient(90deg, #007bff, #0056b3)"
               }} />
@@ -838,8 +1203,8 @@ export default function HomePage() {
                   <span>🎤 Transcription: ~{uploadMetadata.estimatedTranscriptionTime}s</span>
                 )}
                 {uploadMetadata.estimatedTotalTime !== undefined && uploadMetadata.estimatedTotalTime !== null && (
-                  <span style={{ 
-                    fontWeight: "600", 
+                  <span style={{
+                    fontWeight: "600",
                     color: "var(--text-primary)",
                     fontSize: "13px"
                   }}>
@@ -852,12 +1217,16 @@ export default function HomePage() {
         )}
 
         {selectedNote ? (
-          <div 
-            className="note-card note-detail" 
-            style={{ 
-              width: "100%", 
+          <div
+            className="note-card note-detail"
+            draggable
+            onDragStart={(e) => handleDragStart(e, selectedNote)}
+            onDragEnd={handleDragEnd}
+            style={{
+              width: "100%",
               maxWidth: "800px",
-              backgroundColor: selectedNote.color || "#ffffff"
+              backgroundColor: selectedNote.color || "#ffffff",
+              cursor: "grab"
             }}
           >
             <div className="note-header">
@@ -890,15 +1259,45 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="notes-container">
-            {pinnedNotes.length > 0 && (
-              <div className="notes-section">
-                <h2 className="section-title">📌 Pinned Notes</h2>
+            <div 
+              className="notes-section"
+              onDragOver={(e) => handleDragOver(e, "pinned")}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, true, null)}
+              style={{
+                border: dragOverSection === "pinned" ? "2px dashed #007bff" : "2px solid transparent",
+                borderRadius: "8px",
+                padding: dragOverSection === "pinned" ? "10px" : "0",
+                transition: "all 0.2s ease",
+                backgroundColor: dragOverSection === "pinned" ? "rgba(0, 123, 255, 0.05)" : "transparent",
+                minHeight: pinnedNotes.length === 0 ? "100px" : "auto"
+              }}
+            >
+              <h2 className="section-title">📌 Pinned Notes</h2>
+              {pinnedNotes.length === 0 && dragOverSection === "pinned" && (
+                <div style={{ 
+                  textAlign: "center", 
+                  padding: "20px", 
+                  color: "#007bff",
+                  fontStyle: "italic"
+                }}>
+                  Drop note here to pin
+                </div>
+              )}
+              {pinnedNotes.length > 0 && (
                 <div className="notes-grid">
                   {pinnedNotes.map((note) => (
                     <div
                       key={note.id}
                       className="note-card"
-                      style={{ backgroundColor: note.color || "#ffffff" }}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, note)}
+                      onDragEnd={handleDragEnd}
+                      style={{ 
+                        backgroundColor: note.color || "#ffffff",
+                        cursor: "grab",
+                        opacity: draggedNote?.id === note.id ? 0.5 : 1
+                      }}
                       onClick={() => handleNoteClick(note)}
                       onMouseEnter={() => setHoveredNoteId(note.id)}
                       onMouseLeave={() => setHoveredNoteId(null)}
@@ -924,49 +1323,314 @@ export default function HomePage() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+
+            {pinnedNotes.length > 0 && (categorizedNotes.length > 0 || uncategorizedNotes.length > 0) && <div className="section-divider"></div>}
+
+            {(categorizedNotes.length > 0 || categories.some(cat => dragOverSection === "category" && dragOverCategoryId === cat.id)) && (
+              <div>
+                <h2 className="section-title">Category Notes</h2>
+                <div className="categories-container">
+                  {categories.map((category) => {
+                    // Get notes for this category
+                    const categoryNotes = categorizedNotes.filter(note => note.category_id === category.id);
+                    const isDragOver = dragOverSection === "category" && dragOverCategoryId === category.id;
+                    const isEditing = editingCategoryId === category.id;
+                    
+                    return (
+                      <div 
+                        key={category.id} 
+                        className="category-notes-section"
+                        onDragOver={(e) => handleDragOver(e, "category", category.id)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, false, category.id)}
+                        style={{
+                          border: isDragOver ? "2px dashed #007bff" : "2px solid transparent",
+                          borderRadius: "8px",
+                          padding: isDragOver ? "10px" : "0",
+                          transition: "all 0.2s ease",
+                          backgroundColor: isDragOver ? "rgba(0, 123, 255, 0.05)" : "transparent",
+                          minHeight: categoryNotes.length === 0 ? "100px" : "auto",
+                          marginBottom: "30px",
+                          width: "100%"
+                        }}
+                      >
+                        <div className="category-header" style={{ 
+                          display: "flex", 
+                          alignItems: "center", 
+                          gap: "10px",
+                          marginBottom: "15px",
+                          padding: "10px",
+                          backgroundColor: "var(--bg-secondary)",
+                          borderRadius: "8px",
+                          borderLeft: `4px solid ${category.color || "#007bff"}`
+                        }}>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editingCategoryName}
+                              onChange={(e) => setEditingCategoryName(e.target.value)}
+                              onBlur={() => {
+                                handleUpdateCategoryName(category.id, editingCategoryName);
+                              }}
+                              onKeyPress={(e) => {
+                                if (e.key === "Enter") {
+                                  handleUpdateCategoryName(category.id, editingCategoryName);
+                                } else if (e.key === "Escape") {
+                                  setEditingCategoryId(null);
+                                }
+                              }}
+                              autoFocus
+                              style={{
+                                flex: 1,
+                                padding: "5px 10px",
+                                fontSize: "18px",
+                                fontWeight: "600",
+                                border: "2px solid #007bff",
+                                borderRadius: "4px",
+                                outline: "none"
+                              }}
+                            />
+                          ) : (
+                            <h3 
+                              className="category-title"
+                              onDoubleClick={() => {
+                                setEditingCategoryId(category.id);
+                                setEditingCategoryName(category.name);
+                              }}
+                              style={{ 
+                                flex: 1,
+                                cursor: "pointer",
+                                margin: 0,
+                                color: category.color || "#007bff"
+                              }}
+                            >
+                              {category.name}
+                            </h3>
+                          )}
+                          <div style={{ position: "relative" }} className="color-picker-container">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setShowColorPicker(showColorPicker === category.id ? null : category.id);
+                              }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              style={{
+                                width: "30px",
+                                height: "30px",
+                                borderRadius: "50%",
+                                border: `2px solid ${category.color || "#007bff"}`,
+                                backgroundColor: category.color || "#007bff",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                outline: "none"
+                              }}
+                              title="Change category color"
+                            >
+                              <FiTag style={{ color: "white", fontSize: "14px" }} />
+                            </button>
+                            {showColorPicker === category.id && (
+                              <div 
+                                className="color-picker-popup"
+                                onClick={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                                style={{
+                                  position: "absolute",
+                                  top: "40px",
+                                  right: "0",
+                                  backgroundColor: "var(--bg-secondary)",
+                                  padding: "10px",
+                                  borderRadius: "8px",
+                                  boxShadow: "0 4px 12px var(--shadow)",
+                                  zIndex: 10001,
+                                  display: "flex",
+                                  gap: "8px",
+                                  flexWrap: "wrap",
+                                  width: "150px",
+                                  border: "1px solid var(--border-color)"
+                                }}
+                              >
+                                {colorPalette.map((color) => (
+                                  <button
+                                    key={color}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleUpdateCategoryColor(category.id, color);
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    style={{
+                                      width: "30px",
+                                      height: "30px",
+                                      borderRadius: "50%",
+                                      backgroundColor: color,
+                                      border: "2px solid var(--border-color)",
+                                      cursor: "pointer",
+                                      transition: "transform 0.2s",
+                                      outline: "none"
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
+                                    onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {categoryNotes.length === 0 && isDragOver && (
+                          <div style={{ 
+                            textAlign: "center", 
+                            padding: "20px", 
+                            color: "#007bff",
+                            fontStyle: "italic"
+                          }}>
+                            Drop note here
+                          </div>
+                        )}
+                        {categoryNotes.length > 0 && (
+                          <div className="notes-grid">
+                            {categoryNotes.map((note) => (
+                            <div
+                              key={note.id}
+                              className="note-card"
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, note)}
+                              onDragEnd={handleDragEnd}
+                              style={{ 
+                                backgroundColor: note.color || "#ffffff",
+                                cursor: "grab",
+                                opacity: draggedNote?.id === note.id ? 0.5 : 1
+                              }}
+                              onClick={() => handleNoteClick(note)}
+                              onMouseEnter={() => setHoveredNoteId(note.id)}
+                              onMouseLeave={() => setHoveredNoteId(null)}
+                            >
+                              {hoveredNoteId === note.id && (
+                                <div className="quick-actions">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handlePin(note); }}
+                                    className="quick-action-btn"
+                                    title={note.pinned ? "Unpin" : "Pin"}
+                                  >
+                                    <FiMapPin style={{ color: note.pinned ? "#ffd700" : "inherit" }} />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleEdit(note); }}
+                                    className="quick-action-btn"
+                                    title="Edit"
+                                  >
+                                    <FiEdit2 />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDuplicate(note); }}
+                                    className="quick-action-btn"
+                                    title="Duplicate"
+                                  >
+                                    <FiCopy />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }}
+                                    className="quick-action-btn"
+                                    title="Delete"
+                                  >
+                                    <FiTrash2 />
+                                  </button>
+                                </div>
+                              )}
+                              <h2>{highlightText(note.title, searchTerm)}</h2>
+                              <p>
+                                {note.content
+                                  ? (note.content.length > 100
+                                    ? highlightText(note.content.substring(0, 100) + "...", searchTerm)
+                                    : highlightText(note.content, searchTerm))
+                                  : "No content"}
+                              </p>
+                            </div>
+                          ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
-            {(pinnedNotes.length > 0 && regularNotes.length > 0) && <div className="section-divider"></div>}
+            {((categorizedNotes.length > 0 || categories.some(cat => dragOverSection === "category" && dragOverCategoryId === cat.id)) && uncategorizedNotes.length > 0) && <div className="section-divider"></div>}
 
-            <div className="notes-section">
-              {pinnedNotes.length > 0 && <h2 className="section-title">All Notes</h2>}
+            <div 
+              className="notes-section"
+              onDragOver={(e) => handleDragOver(e, "uncategorized")}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, false, null)}
+              style={{
+                border: dragOverSection === "uncategorized" ? "2px dashed #007bff" : "2px solid transparent",
+                borderRadius: "8px",
+                padding: dragOverSection === "uncategorized" ? "10px" : "0",
+                transition: "all 0.2s ease",
+                backgroundColor: dragOverSection === "uncategorized" ? "rgba(0, 123, 255, 0.05)" : "transparent",
+                minHeight: uncategorizedNotes.length === 0 ? "100px" : "auto"
+              }}
+            >
+              {uncategorizedNotes.length > 0 && <h2 className="section-title">All Notes</h2>}
+              {uncategorizedNotes.length === 0 && dragOverSection === "uncategorized" && (
+                <div style={{ 
+                  textAlign: "center", 
+                  padding: "20px", 
+                  color: "#007bff",
+                  fontStyle: "italic"
+                }}>
+                  Drop note here to remove from category
+                </div>
+              )}
               <div className="notes-grid">
-                {regularNotes.length === 0 && pinnedNotes.length === 0 ? (
-                  <p style={{ color: "#999" }}>No notes yet. Create your first note!</p>
-                ) : regularNotes.length === 0 ? null : (
-                  regularNotes.map((note) => (
-                    <div
-                      key={note.id}
-                      className="note-card"
-                      style={{ backgroundColor: note.color || "#ffffff" }}
-                      onClick={() => handleNoteClick(note)}
-                      onMouseEnter={() => setHoveredNoteId(note.id)}
-                      onMouseLeave={() => setHoveredNoteId(null)}
-                    >
-                      {hoveredNoteId === note.id && (
-                        <div className="quick-actions">
-                          <button onClick={(e) => { e.stopPropagation(); handlePin(note); }} className="quick-action-btn" title={note.pinned ? "Unpin" : "Pin"}>
-                            <FiMapPin style={{ color: note.pinned ? "#ffd700" : "inherit" }} />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleEdit(note); }} className="quick-action-btn" title="Edit">
-                            <FiEdit2 />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDuplicate(note); }} className="quick-action-btn" title="Duplicate">
-                            <FiCopy />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }} className="quick-action-btn" title="Delete">
-                            <FiTrash2 />
-                          </button>
-                        </div>
-                      )}
-                      <h2>{highlightText(note.title, searchTerm)}</h2>
-                      <p>{note.content ? (note.content.length > 100 ? highlightText(note.content.substring(0, 100) + "...", searchTerm) : highlightText(note.content, searchTerm)) : "No content"}</p>
-                    </div>
-                  ))
-                )}
+                {uncategorizedNotes.map(note => (
+                  <div
+                    key={note.id}
+                    className="note-card"
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, note)}
+                    onDragEnd={handleDragEnd}
+                    style={{ 
+                      backgroundColor: note.color || "#ffffff",
+                      cursor: "grab",
+                      opacity: draggedNote?.id === note.id ? 0.5 : 1
+                    }}
+                    onClick={() => handleNoteClick(note)}
+                    onMouseEnter={() => setHoveredNoteId(note.id)}
+                    onMouseLeave={() => setHoveredNoteId(null)}
+                  >
+                    {/* Quick actions */}
+                    {hoveredNoteId === note.id && (
+                      <div className="quick-actions">
+                        <button onClick={(e) => { e.stopPropagation(); handlePin(note); }} className="quick-action-btn" title={note.pinned ? "Unpin" : "Pin"}>
+                          <FiMapPin style={{ color: note.pinned ? "#ffd700" : "inherit" }} />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleEdit(note); }} className="quick-action-btn" title="Edit">
+                          <FiEdit2 />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDuplicate(note); }} className="quick-action-btn" title="Duplicate">
+                          <FiCopy />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }} className="quick-action-btn" title="Delete">
+                          <FiTrash2 />
+                        </button>
+                      </div>
+                    )}
+                    <h2>{highlightText(note.title, searchTerm)}</h2>
+                    <p>{note.content ? (note.content.length > 100 ? highlightText(note.content.substring(0, 100) + "...", searchTerm) : highlightText(note.content, searchTerm)) : "No content"}</p>
+                  </div>
+                ))}
               </div>
             </div>
+
+
           </div>
         )}
       </main>
@@ -1042,6 +1706,64 @@ export default function HomePage() {
 
       {/* Voice Command Button */}
       <VoiceCommandButton onCommand={handleVoiceCommand} />
+
+      {/* Toast Notifications */}
+      <div className="toast-container">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`toast toast-${toast.type}`}
+            style={{
+              animation: "slideInRight 0.3s ease"
+            }}
+          >
+            {toast.type === "success" ? "✓" : "✕"} {toast.message}
+          </div>
+        ))}
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div 
+          className="modal-overlay" 
+          onClick={() => {
+            setShowDeleteModal(false);
+            setItemToDelete({ type: null, id: null, name: null });
+          }}
+          style={{ zIndex: 10000 }}
+        >
+          <div 
+            className="delete-modal-container" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="delete-modal-title">Confirm Delete</h2>
+            <p className="delete-modal-message">
+              Are you sure you want to delete <strong>"{itemToDelete.name}"</strong>?
+              {itemToDelete.type === "category" && " Notes in this category will become uncategorized."}
+            </p>
+            <div className="delete-modal-buttons">
+              <button
+                className="delete-modal-btn cancel"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setItemToDelete({ type: null, id: null, name: null });
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="delete-modal-btn confirm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  confirmDelete();
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

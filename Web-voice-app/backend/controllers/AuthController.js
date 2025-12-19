@@ -49,9 +49,14 @@ class AuthController {
       }
 
       // Update last login
-      UserModel.updateLastLogin(user.id).catch(err => 
+      UserModel.updateLastLogin(user.id).catch(err =>
         console.error("Failed to update last login:", err)
       );
+
+      // Create session
+      req.session.userId = user.id;
+      req.session.username = user.username;
+      req.session.email = user.email;
 
       return res.status(200).json({
         message: "Login successful",
@@ -61,6 +66,44 @@ class AuthController {
       });
     } catch (error) {
       console.error("Login error:", error);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+
+  static async logout(req, res) {
+    try {
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("Session destroy error:", err);
+          return res.status(500).json({ message: "Error logging out" });
+        }
+        res.clearCookie("connect.sid"); // Clear the session cookie
+        return res.status(200).json({ message: "Logout successful" });
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+      return res.status(500).json({ message: "Server error" });
+    }
+  }
+
+  static async getCurrentUser(req, res) {
+    try {
+      if (!req.session || !req.session.userId) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      const user = await UserModel.findById(req.session.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.status(200).json({
+        userId: user.id,
+        username: user.username,
+        email: user.email
+      });
+    } catch (error) {
+      console.error("Get current user error:", error);
       return res.status(500).json({ message: "Server error" });
     }
   }

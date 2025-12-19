@@ -14,14 +14,14 @@ class CategoryController {
   }
 
   static async createCategory(req, res) {
-    const { userId, name } = req.body;
+    const { userId, name, color } = req.body;
 
     if (!userId || !name || !name.trim()) {
       return res.status(400).json({ message: "User ID and name are required" });
     }
 
     try {
-      const categoryId = await CategoryModel.create(userId, name.trim());
+      const categoryId = await CategoryModel.create(userId, name.trim(), color || "#007bff");
       const category = await CategoryModel.findById(categoryId);
       return res.status(201).json(category);
     } catch (error) {
@@ -32,14 +32,22 @@ class CategoryController {
 
   static async updateCategory(req, res) {
     const { categoryId } = req.params;
-    const { name } = req.body;
+    const { name, color } = req.body;
 
-    if (!name || !name.trim()) {
-      return res.status(400).json({ message: "Name is required" });
+    const updates = {};
+    if (name !== undefined && name.trim()) {
+      updates.name = name.trim();
+    }
+    if (color !== undefined) {
+      updates.color = color;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No fields to update" });
     }
 
     try {
-      await CategoryModel.update(categoryId, name.trim());
+      await CategoryModel.update(categoryId, updates);
       const category = await CategoryModel.findById(categoryId);
       if (!category) {
         return res.status(404).json({ message: "Category not found" });
