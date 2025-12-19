@@ -1,5 +1,6 @@
 import "./AdminDashboard.css";
 import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -23,6 +24,8 @@ import {
   FaArrowUp,
   FaArrowDown,
 } from "react-icons/fa";
+import { FiLogOut } from "react-icons/fi";
+import API_CONFIG from "../config/api";
 
 const THEMES = {
   primary: "#3b57ff",
@@ -31,40 +34,6 @@ const THEMES = {
   danger: "#f44336",
   warning: "#ff9800",
   muted: "#777",
-};
-
-/* ---------------- MOCK DATA ---------------- */
-const MOCK_DATA = {
-  usage: [
-    { date: "Mon", sessions: 120 },
-    { date: "Tue", sessions: 200 },
-    { date: "Wed", sessions: 150 },
-    { date: "Thu", sessions: 280 },
-    { date: "Fri", sessions: 320 },
-    { date: "Sat", sessions: 210 },
-    { date: "Sun", sessions: 170 },
-  ],
-  accuracy: [
-    { feature: "Speech to Text", rate: 92 },
-    { feature: "Voice Commands", rate: 87 },
-    { feature: "Language Detection", rate: 90 },
-    { feature: "Noise Filtering", rate: 85 },
-  ],
-  kpis: {
-    totalUsers: 1245,
-    activeUsers: 980,
-    inactiveUsers: 265,
-    voiceSessions: 8430,
-    avgAccuracy: 89,
-    errorRate: 3.2,
-    uptime: "99.4%",
-  },
-  topUsers: [
-    { name: "Ahmed Ali", sessions: 320 },
-    { name: "Sara Mohamed", sessions: 295 },
-    { name: "Omar Hassan", sessions: 270 },
-    { name: "Mona Adel", sessions: 250 },
-  ],
 };
 
 /* ---------------- KPI CARDS ---------------- */
@@ -116,16 +85,74 @@ function KpiCards({ kpis }) {
 
 /* ---------------- MAIN PAGE ---------------- */
 function AdminPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [error, setError] = useState(null);
 
+  // Check if user is admin
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setAnalytics(MOCK_DATA);
-      setLoading(false);
-    }, 900);
-    return () => clearTimeout(timer);
-  }, []);
+    // Only check if we're on admin route
+    if (location.pathname !== '/admin') {
+      return;
+    }
+
+    const checkAdminAccess = async () => {
+      try {
+        // Call isAdmin endpoint to check if user is admin
+        const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/is-admin`, {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          // If not authenticated, redirect to login
+          if (response.status === 401) {
+            navigate("/login", { replace: true });
+            return;
+          }
+          // Otherwise redirect to regular dashboard
+          navigate("/", { replace: true });
+          return;
+        }
+
+        const data = await response.json();
+        
+        if (!data.isAdmin) {
+          // User is authenticated but not admin, redirect to regular dashboard
+          navigate("/", { replace: true });
+          return;
+        }
+
+        // User is admin, proceed with loading admin dashboard
+        setIsAdmin(true);
+        setCheckingAuth(false);
+
+        // Fetch dashboard data
+        const dashboardResponse = await fetch(`${API_CONFIG.BACKEND_URL}/api/admin/dashboard`, {
+          credentials: "include",
+        });
+
+        if (dashboardResponse.ok) {
+          const dashboardData = await dashboardResponse.json();
+          setAnalytics(dashboardData);
+        } else {
+          // Show error instead of using mock data
+          const errorData = await dashboardResponse.json().catch(() => ({}));
+          setError(errorData.message || "Failed to load dashboard data. Please try again later.");
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error("Error checking admin access:", error);
+        setError("Failed to verify admin access. Please try again.");
+        setCheckingAuth(false);
+      }
+    };
+
+    checkAdminAccess();
+  }, [navigate, location.pathname]);
 
   const kpis = analytics
     ? [
@@ -181,15 +208,90 @@ function AdminPage() {
       {/* MAIN */}
       <main className="adm-main">
         <header className="adm-header">
-          <h1>Admin Dashboard</h1>
-          <p className="adm-subtitle">
-            Monitor users, voice activity and system health
-          </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <h1>Admin Dashboard</h1>
+              <p className="adm-subtitle">
+                Monitor users, voice activity and system health
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  const response = await fetch(`${API_CONFIG.BACKEND_URL}/logout`, {
+                    method: "POST",
+                    credentials: "include",
+                  });
+
+                  if (response.ok) {
+                    navigate("/login", { replace: true });
+                  } else {
+                    alert("Error logging out. Please try again.");
+                  }
+                } catch (error) {
+                  console.error("Logout error:", error);
+                  // Even if there's an error, redirect to login
+                  navigate("/login", { replace: true });
+                }
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 20px",
+                backgroundColor: THEMES.danger,
+                color: "white",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "16px",
+                fontWeight: 600,
+                transition: "0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = "#d32f2f";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = THEMES.danger;
+              }}
+            >
+              <FiLogOut /> Logout
+            </button>
+          </div>
         </header>
 
-        {loading && <p style={{ textAlign: "center" }}>Loading analytics...</p>}
+        {checkingAuth && (
+          <p style={{ textAlign: "center", padding: "40px" }}>
+            Verifying admin access...
+          </p>
+        )}
 
-        {!loading && analytics && (
+        {!checkingAuth && !isAdmin && (
+          <p style={{ textAlign: "center", padding: "40px", color: "#f44336" }}>
+            Access denied. Admin privileges required.
+          </p>
+        )}
+
+        {error && (
+          <div
+            style={{
+              padding: "20px",
+              backgroundColor: "#fdecea",
+              borderLeft: `6px solid ${THEMES.danger}`,
+              borderRadius: "10px",
+              marginBottom: "20px",
+            }}
+          >
+            <FaExclamationTriangle color={THEMES.danger} />{" "}
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+
+        {!checkingAuth && isAdmin && loading && (
+          <p style={{ textAlign: "center" }}>Loading analytics...</p>
+        )}
+
+        {!checkingAuth && isAdmin && !loading && analytics && (
           <>
             <KpiCards kpis={kpis} />
 
@@ -285,24 +387,29 @@ function AdminPage() {
               </ResponsiveContainer>
             </div>
 
-            {/* TOP USERS */}
-            <div className="user-list">
-              <h3 className="section-title">Top Active Users</h3>
-              {analytics.topUsers.map((u) => (
-                <div
-                  key={u.name}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    padding: "10px 0",
-                    borderBottom: "1px solid #eee",
-                  }}
-                >
-                  <span>{u.name}</span>
-                  <strong>{u.sessions} sessions</strong>
-                </div>
-              ))}
-            </div>
+            {/* TOP USERS - Show from userStatistics if available */}
+            {analytics.userStatistics && analytics.userStatistics.length > 0 && (
+              <div className="user-list">
+                <h3 className="section-title">Top Active Users</h3>
+                {analytics.userStatistics
+                  .sort((a, b) => (b.totalNotes || 0) - (a.totalNotes || 0))
+                  .slice(0, 5)
+                  .map((u) => (
+                    <div
+                      key={u.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: "10px 0",
+                        borderBottom: "1px solid #eee",
+                      }}
+                    >
+                      <span>{u.username || u.email}</span>
+                      <strong>{u.totalNotes || 0} notes</strong>
+                    </div>
+                  ))}
+              </div>
+            )}
           </>
         )}
       </main>

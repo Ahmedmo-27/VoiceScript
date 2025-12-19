@@ -33,10 +33,21 @@ export default function Login() {
 
       if (!response.ok) {
         setError(data.message || "Login failed");
+        setLoading(false);
+        return;
+      }
+
+      // Login successful - session is stored on server
+      alert(`Welcome ${data.username}!`);
+      
+      // Check user role and redirect accordingly
+      // Backend finds user by email, validates password, and returns role
+      const userRole = data.role || 'user';
+      
+      if (userRole === 'admin') {
+        navigate("/admin", { replace: true });
       } else {
-        // Login successful - session is stored on server
-        alert(`Welcome ${data.username}!`);
-        navigate("/"); // redirect after login
+        navigate("/", { replace: true }); // redirect regular users to dashboard
       }
     } catch (err) {
       console.error("Fetch/network error:", err);

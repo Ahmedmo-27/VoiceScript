@@ -7,6 +7,8 @@ const authRoutes = require("./routes/authRoutes");
 const noteRoutes = require("./routes/noteRoutes");
 const userRoutes = require("./routes/userRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const feedbackRoutes = require("./routes/feedbackRoutes");
 
 const app = express();
 
@@ -18,8 +20,10 @@ app.use(session({
   cookie: {
     secure: process.env.NODE_ENV === "production", // Use secure cookies in production (HTTPS)
     httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax' // Important for cross-origin requests
+  },
+  name: 'connect.sid' // Explicit session cookie name
 }));
 
 app.use(express.json());
@@ -60,6 +64,8 @@ app.get("/api/test", (req, res) => {
 app.use("/api/notes", noteRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/categories", categoryRoutes);
+app.use("/api/admin", adminRoutes); // Admin routes must come before other catch-all routes
+app.use("/api/feedback", feedbackRoutes);
 
 // --------------------
 // Start Server
@@ -72,6 +78,7 @@ app.listen(PORT, () => {
   console.log("  POST /login");
   console.log("  POST /logout");
   console.log("  GET  /api/me");
+  console.log("  GET  /api/is-admin");
   console.log("  GET  /api/test");
   console.log("  GET  /api/notes/:userId");
   console.log("  GET  /api/notes/search/:userId?q=query");
@@ -86,4 +93,12 @@ app.listen(PORT, () => {
   console.log("  POST /api/categories");
   console.log("  PUT  /api/categories/:categoryId");
   console.log("  DELETE /api/categories/:categoryId");
+  console.log("  GET  /api/admin/dashboard");
+  console.log("  GET  /api/admin/users/statistics");
+  console.log("  GET  /api/admin/check");
+  console.log("  POST /api/feedback/notes/:noteId");
+  console.log("  GET  /api/feedback/notes/:noteId");
+  console.log("  GET  /api/feedback/user");
+  console.log("  GET  /api/feedback/admin/all");
+  console.log("  GET  /api/feedback/admin/statistics");
 });

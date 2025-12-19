@@ -3,7 +3,8 @@ const UserModel = require("../models/UserModel");
 
 class AuthController {
   static async register(req, res) {
-    const { username, email, password } = req.body;
+    const { username, email, password, role } = req.body;
+    const userRole = (role === 'admin' || role === 'user') ? role : 'user';
 
     if (!username || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
@@ -18,7 +19,7 @@ class AuthController {
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
-      const userId = await UserModel.create(username, email, hashedPassword);
+      const userId = await UserModel.create(username, email, hashedPassword, userRole);
 
       return res.status(201).json({
         message: "User created successfully",
@@ -53,16 +54,21 @@ class AuthController {
         console.error("Failed to update last login:", err)
       );
 
+      // Normalize role (handle null/undefined, trim whitespace)
+      const userRole = user.role ? user.role.toString().trim() : 'user';
+
       // Create session
       req.session.userId = user.id;
       req.session.username = user.username;
       req.session.email = user.email;
+      req.session.role = userRole;
 
       return res.status(200).json({
         message: "Login successful",
         userId: user.id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        role: userRole
       });
     } catch (error) {
       console.error("Login error:", error);
@@ -92,19 +98,62 @@ class AuthController {
         return res.status(401).json({ message: "Not authenticated" });
       }
 
+      // Get user from database - always fetch fresh role from database
       const user = await UserModel.findById(req.session.userId);
+      
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
 
+      // Get role directly from database result (never use session role)
+      const userRole = user.role ? user.role.toString().trim() : 'user';
+
       return res.status(200).json({
         userId: user.id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        role: userRole
       });
     } catch (error) {
       console.error("Get current user error:", error);
       return res.status(500).json({ message: "Server error" });
+    }
+  }
+
+  // Check if current user is admin
+  static async isAdmin(req, res) {
+    try {
+      if (!req.session || !req.session.userId) {
+        return res.status(401).json({ 
+          message: "Not authenticated", 
+          isAdmin: false 
+        });
+      }
+
+      // Get user from database and check role
+      const user = await UserModel.findById(req.session.userId);
+      
+      if (!user) {
+        return res.status(401).json({ 
+          message: "User not found", 
+          isAdmin: false 
+        });
+      }
+
+      // Check role from database (case-insensitive, trimmed)
+      const userRole = user.role ? user.role.toString().trim().toLowerCase() : 'user';
+      const isAdmin = userRole === 'admin';
+
+      return res.status(200).json({ 
+        isAdmin,
+        role: user.role || 'user'
+      });
+    } catch (error) {
+      console.error("Is admin check error:", error);
+      return res.status(500).json({ 
+        message: "Server error", 
+        isAdmin: false 
+      });
     }
   }
 }

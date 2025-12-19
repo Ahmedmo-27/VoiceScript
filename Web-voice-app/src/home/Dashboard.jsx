@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { FiMic, FiHome, FiFileText, FiUser, FiLogOut, FiPlus, FiMapPin, FiEdit2, FiTrash2, FiCopy, FiMoon, FiSun, FiTag, FiUpload } from "react-icons/fi";
 import { useTheme } from "../context/ThemeContext";
 import { highlightText } from "../utils/highlightText";
@@ -11,6 +11,7 @@ import "./Dashboard.css";
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [showModal, setShowModal] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
@@ -43,6 +44,16 @@ export default function HomePage() {
   const [draggedNote, setDraggedNote] = useState(null);
   const [dragOverSection, setDragOverSection] = useState(null);
   const [dragOverCategoryId, setDragOverCategoryId] = useState(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [wantToProvideFeedback, setWantToProvideFeedback] = useState(false);
+  const [feedbackData, setFeedbackData] = useState({
+    totalWords: 0,
+    errorCount: 0,
+    errorWords: "",
+    feedbackType: "positive"
+  });
+  const [savedNoteId, setSavedNoteId] = useState(null);
+  const [audioStream, setAudioStream] = useState(null);
 
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
     // Load language preference from localStorage, default to en-US
@@ -52,18 +63,32 @@ export default function HomePage() {
 
   // Get user from session
   useEffect(() => {
+    // Only run this effect if we're on the dashboard route (not admin or other routes)
+    if (location.pathname !== '/') {
+      return;
+    }
+
     const fetchUser = async () => {
       try {
         const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/me`, {
-          credentials: "include", // Include cookies for session
+          credentials: "include",
         });
 
         if (!response.ok) {
-          navigate("/login");
+          navigate("/login", { replace: true });
           return;
         }
 
         const userData = await response.json();
+        const userRole = userData.role || 'user';
+        
+        // Redirect admin users to admin dashboard
+        if (userRole === 'admin') {
+          navigate("/admin", { replace: true });
+          return;
+        }
+        
+        // Regular users continue to dashboard
         setUser({
           userId: userData.userId,
           username: userData.username,
@@ -71,19 +96,20 @@ export default function HomePage() {
         });
         fetchNotes(userData.userId);
         fetchCategories(userData.userId);
+        setLoading(false);
       } catch (error) {
         console.error("Error fetching user:", error);
-        navigate("/login");
+        navigate("/login", { replace: true });
       }
     };
 
     fetchUser();
-  }, [navigate]);
+  }, [navigate, location.pathname]);
   //  Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
       // N -> 3shan new note
-      if (e.key === "n" && !e.ctrlKey && !e.metaKey) {
+      if (e.key === "n" && !e.ctrlKey && !e.metaKey && !showModal) {
         e.preventDefault();
         openNewNoteModal();
       }
@@ -95,8 +121,8 @@ export default function HomePage() {
         if (searchInput) searchInput.focus();
       }
 
-      // CTRL+S -> 3shan save
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      // CTRL+S -> 3shan save (only when modal is open)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && showModal) {
         e.preventDefault();
         handleSave();
       }
@@ -107,7 +133,7 @@ export default function HomePage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedNote, noteTitle, noteBody, noteColor]);
+  }, [showModal]);
 
   // Save language preference to localStorage when it changes
   useEffect(() => {
@@ -129,6 +155,33 @@ export default function HomePage() {
       };
     }
   }, [showColorPicker]);
+
+  // Cleanup audio stream when component unmounts or modal closes
+  useEffect(() => {
+    return () => {
+      if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+        setAudioStream(null);
+      }
+    };
+  }, [audioStream]);
+
+  // Cleanup when modal closes
+  useEffect(() => {
+    if (!showModal && audioStream) {
+      audioStream.getTracks().forEach(track => track.stop());
+      setAudioStream(null);
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try {
+          mediaRecorder.stop();
+        } catch (e) {
+          console.error("Error stopping recorder:", e);
+        }
+      }
+      setIsRecording(false);
+      setMediaRecorder(null);
+    }
+  }, [showModal, audioStream, mediaRecorder]);
 
   const handleLanguageChange = (languageCode) => {
     setSelectedLanguage(languageCode);
@@ -393,11 +446,30 @@ export default function HomePage() {
           setNotes([note, ...notes]);
           showToast("New note created successfully!", "success");
         }
+        
+        // Calculate word count for feedback
+        const wordCount = noteBody.trim().split(/\s+/).filter(word => word.length > 0).length;
+        setFeedbackData(prev => ({
+          ...prev,
+          totalWords: wordCount
+        }));
+        
+        // Close modal and reset form
         setShowModal(false);
         setEditingNote(null);
         setNoteTitle("");
         setNoteBody("");
         setNoteColor("#ffffff");
+        setSelectedCategoryId(null);
+        
+        // Show feedback modal if user checked the checkbox
+        if (wantToProvideFeedback) {
+          setSavedNoteId(note.id);
+          setShowFeedbackModal(true);
+        }
+        
+        // Reset feedback checkbox
+        setWantToProvideFeedback(false);
       } else {
         const data = await response.json();
         showToast("Failed to save note: " + (data.message || "Unknown error"), "error");
@@ -414,6 +486,7 @@ export default function HomePage() {
     setNoteBody(note.content || "");
     setNoteColor(note.color || "#ffffff");
     setSelectedCategoryId(note.category_id || null);
+    setWantToProvideFeedback(false);
     setShowModal(true);
   };
 
@@ -605,6 +678,8 @@ export default function HomePage() {
     setNoteTitle("");
     setNoteBody("");
     setNoteColor("#ffffff");
+    setSelectedCategoryId(null);
+    setWantToProvideFeedback(false);
     setShowModal(true);
   };
 
@@ -641,7 +716,14 @@ export default function HomePage() {
 
   const handleMicClick = async () => {
     if (isRecording) {
-      mediaRecorder.stop();
+      // Stop recording
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try {
+          mediaRecorder.stop();
+        } catch (e) {
+          console.error("Error stopping recorder:", e);
+        }
+      }
       setIsRecording(false);
     } else {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -650,7 +732,13 @@ export default function HomePage() {
       }
 
       try {
+        // Stop any existing stream first
+        if (audioStream) {
+          audioStream.getTracks().forEach(track => track.stop());
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setAudioStream(stream);
         const recorder = new MediaRecorder(stream);
         let chunks = [];
 
@@ -659,59 +747,87 @@ export default function HomePage() {
         };
 
         recorder.onstop = async () => {
+          // Stop all tracks in the stream
+          stream.getTracks().forEach(track => track.stop());
+          setAudioStream(null);
+
           const blob = new Blob(chunks, { type: "audio/webm" });
           chunks = [];
 
-          const arrayBuffer = await blob.arrayBuffer();
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-          const wavBlob = encodeWAV(audioBuffer);
-          const formData = new FormData();
-          formData.append("audio", wavBlob, "recording.wav");
-
-          // Ensure language is set, default to en-US if not
-          const languageToSend = selectedLanguage || 'en-US';
-          formData.append("language", languageToSend);
-
-          console.log("Sending transcription request with language:", languageToSend);
-          console.log("Audio blob size:", wavBlob.size, "bytes");
-
           try {
-            const response = await fetch(`${API_CONFIG.MICROPHONE_SERVICE_URL}/transcribe`, {
-              method: "POST",
-              body: formData,
-            });
+            const arrayBuffer = await blob.arrayBuffer();
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-            const data = await response.json();
+            const wavBlob = encodeWAV(audioBuffer);
+            const formData = new FormData();
+            formData.append("audio", wavBlob, "recording.wav");
 
-            if (!response.ok) {
-              console.error("Transcription error:", data);
-              console.error("Response status:", response.status);
-              console.error("Error details:", JSON.stringify(data, null, 2));
-              alert(`Transcription error: ${data.error || data.message || "Unknown error"}`);
-              return;
-            }
+            // Ensure language is set, default to en-US if not
+            const languageToSend = selectedLanguage || 'en-US';
+            formData.append("language", languageToSend);
 
-            if (data.text) {
-              setNoteBody(data.text);
-            } else if (data.error) {
-              alert("Transcription error: " + data.error);
-            } else {
-              alert("Unexpected response from server");
+            console.log("Sending transcription request with language:", languageToSend);
+            console.log("Audio blob size:", wavBlob.size, "bytes");
+
+            try {
+              const response = await fetch(`${API_CONFIG.MICROPHONE_SERVICE_URL}/transcribe`, {
+                method: "POST",
+                body: formData,
+              });
+
+              const data = await response.json();
+
+              if (!response.ok) {
+                console.error("Transcription error:", data);
+                console.error("Response status:", response.status);
+                console.error("Error details:", JSON.stringify(data, null, 2));
+                alert(`Transcription error: ${data.error || data.message || "Unknown error"}`);
+                return;
+              }
+
+              if (data.text) {
+                setNoteBody(data.text);
+                showToast("Transcription completed!", "success");
+              } else if (data.error) {
+                alert("Transcription error: " + data.error);
+              } else {
+                alert("Unexpected response from server");
+              }
+            } catch (err) {
+              console.error("Error sending audio to server:", err);
+              alert(`Error sending audio to server: ${err.message || "Network error"}`);
             }
           } catch (err) {
-            console.error("Error sending audio to server:", err);
-            alert(`Error sending audio to server: ${err.message || "Network error"}`);
+            console.error("Error processing audio:", err);
+            alert("Error processing audio: " + err.message);
           }
+        };
+
+        recorder.onerror = (e) => {
+          console.error("MediaRecorder error:", e);
+          alert("Recording error occurred");
+          stream.getTracks().forEach(track => track.stop());
+          setAudioStream(null);
+          setIsRecording(false);
+          setMediaRecorder(null);
         };
 
         recorder.start();
         setMediaRecorder(recorder);
         setIsRecording(true);
       } catch (err) {
-        console.error(err);
-        alert("Error accessing microphone");
+        console.error("Error accessing microphone:", err);
+        if (err.name === 'NotAllowedError') {
+          alert("Microphone access denied. Please allow microphone access and try again.");
+        } else if (err.name === 'NotFoundError') {
+          alert("No microphone found. Please connect a microphone and try again.");
+        } else {
+          alert("Error accessing microphone: " + err.message);
+        }
+        setAudioStream(null);
+        setIsRecording(false);
+        setMediaRecorder(null);
       }
     }
   };
@@ -1683,6 +1799,18 @@ export default function HomePage() {
               </div>
             </div>
 
+            <div className="feedback-checkbox-container">
+              <label className="feedback-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={wantToProvideFeedback}
+                  onChange={(e) => setWantToProvideFeedback(e.target.checked)}
+                  className="feedback-checkbox"
+                />
+                <span>I would like to provide feedback to improve VoiceScript</span>
+              </label>
+            </div>
+
             <div className="modal-buttons">
               <button className="modal-btn cancel" onClick={() => { setShowModal(false); setEditingNote(null); }}>Cancel</button>
               <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -1759,6 +1887,154 @@ export default function HomePage() {
                 }}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feedback Modal */}
+      {showFeedbackModal && (
+        <div 
+          className="modal-overlay" 
+          onClick={() => {
+            setShowFeedbackModal(false);
+            setSavedNoteId(null);
+            setFeedbackData({
+              totalWords: 0,
+              errorCount: 0,
+              errorWords: "",
+              feedbackType: "positive"
+            });
+          }}
+          style={{ zIndex: 10001 }}
+        >
+          <div 
+            className="feedback-modal-container" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="feedback-modal-title">Provide Feedback</h2>
+            <p className="feedback-modal-description">
+              Help us improve VoiceScript by providing feedback on the transcription quality.
+            </p>
+            
+            <div className="feedback-form">
+              <div className="feedback-field">
+                <label>Total Words:</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={feedbackData.totalWords}
+                  onChange={(e) => setFeedbackData(prev => ({ ...prev, totalWords: parseInt(e.target.value) || 0 }))}
+                  className="feedback-input"
+                />
+              </div>
+
+              <div className="feedback-field">
+                <label>Number of Errors:</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={feedbackData.errorCount}
+                  onChange={(e) => {
+                    const errorCount = parseInt(e.target.value) || 0;
+                    setFeedbackData(prev => ({ 
+                      ...prev, 
+                      errorCount,
+                      feedbackType: errorCount === 0 ? "positive" : "negative"
+                    }));
+                  }}
+                  className="feedback-input"
+                />
+              </div>
+
+              {feedbackData.errorCount > 0 && (
+                <div className="feedback-field">
+                  <label>Error Words (comma-separated):</label>
+                  <input
+                    type="text"
+                    value={feedbackData.errorWords}
+                    onChange={(e) => setFeedbackData(prev => ({ ...prev, errorWords: e.target.value }))}
+                    placeholder="e.g., word1, word2, word3"
+                    className="feedback-input"
+                  />
+                </div>
+              )}
+
+              <div className="feedback-field">
+                <label>Feedback Type:</label>
+                <select
+                  value={feedbackData.feedbackType}
+                  onChange={(e) => setFeedbackData(prev => ({ ...prev, feedbackType: e.target.value }))}
+                  className="feedback-select"
+                >
+                  <option value="positive">Positive (No errors)</option>
+                  <option value="negative">Negative (Has errors)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="feedback-modal-buttons">
+              <button
+                className="feedback-modal-btn cancel"
+                onClick={() => {
+                  setShowFeedbackModal(false);
+                  setSavedNoteId(null);
+                  setFeedbackData({
+                    totalWords: 0,
+                    errorCount: 0,
+                    errorWords: "",
+                    feedbackType: "positive"
+                  });
+                }}
+              >
+                Skip
+              </button>
+              <button
+                className="feedback-modal-btn submit"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!savedNoteId) {
+                    showToast("Note ID not found", "error");
+                    return;
+                  }
+
+                  try {
+                    const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/feedback/notes/${savedNoteId}`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      credentials: "include",
+                      body: JSON.stringify({
+                        totalWords: feedbackData.totalWords,
+                        errorCount: feedbackData.errorCount,
+                        errorWords: feedbackData.errorWords || null,
+                        feedbackType: feedbackData.feedbackType
+                      }),
+                    });
+
+                    if (response.ok) {
+                      showToast("Feedback submitted successfully! Thank you.", "success");
+                      setShowFeedbackModal(false);
+                      setSavedNoteId(null);
+                      setFeedbackData({
+                        totalWords: 0,
+                        errorCount: 0,
+                        errorWords: "",
+                        feedbackType: "positive"
+                      });
+                    } else {
+                      const data = await response.json();
+                      showToast("Failed to submit feedback: " + (data.message || "Unknown error"), "error");
+                    }
+                  } catch (error) {
+                    console.error("Error submitting feedback:", error);
+                    showToast("Error submitting feedback. Please try again.", "error");
+                  }
+                }}
+              >
+                Submit Feedback
               </button>
             </div>
           </div>

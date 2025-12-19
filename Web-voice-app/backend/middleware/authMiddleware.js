@@ -1,78 +1,60 @@
-const UserModel = require('../models/UserModel');
+const UserModel = require("../models/UserModel");
 
-class AuthMiddleware {
-    // Check if user is authenticated
-    static isAuthenticated(req, res, next) {
-        if (req.session && req.session.userId) {
-            next();
-        } else {
-            return res.status(401).json({
-                success: false,
-                message: "Please login to access this resource"
-            });
-        }
+// Middleware to check if user is authenticated
+const requireAuth = async (req, res, next) => {
+  try {
+    if (!req.session || !req.session.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
 
-    // Check if user is a guest (for login/register pages)
-    static isGuest(req, res, next) {
-        if (!req.session.userId) {
-            next();
-        } else {
-            return res.status(403).json({
-                success: false,
-                message: "You are already logged in"
-            });
-        }
+    // Verify user still exists
+    const user = await UserModel.findById(req.session.userId);
+    if (!user) {
+      req.session.destroy();
+      return res.status(401).json({ message: "User not found" });
     }
 
-    // Attach user data to request if authenticated
-    static async attachUser(req, res, next) {
-        if (req.session && req.session.userId) {
-            try {
-                const user = await UserModel.findById(req.session.userId);
-                if (user) {
-                    // Remove password hash from user object
-                    const { password_hash, ...userWithoutPassword } = user;
-                    req.user = userWithoutPassword;
-                }
-            } catch (error) {
-                console.error("Error attaching user:", error);
-                // Don't throw error, just continue without user
-            }
-        }
-        next();
+    // Attach user to request
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("Auth middleware error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Middleware to check if user is admin
+const requireAdmin = async (req, res, next) => {
+  try {
+    if (!req.session || !req.session.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
 
-    // Optional: Check for specific user roles
-    static requireRole(role) {
-        return async (req, res, next) => {
-            try {
-                if (!req.session.userId) {
-                    return res.status(401).json({
-                        success: false,
-                        message: "Authentication required"
-                    });
-                }
-
-                const user = await UserModel.findById(req.session.userId);
-                if (!user || user.role !== role) {
-                    return res.status(403).json({
-                        success: false,
-                        message: "Insufficient permissions"
-                    });
-                }
-
-                req.user = user;
-                next();
-            } catch (error) {
-                console.error("Role check error:", error);
-                return res.status(500).json({
-                    success: false,
-                    message: "Server error"
-                });
-            }
-        };
+    // Verify user still exists and is admin
+    const user = await UserModel.findById(req.session.userId);
+    if (!user) {
+      req.session.destroy();
+      return res.status(401).json({ message: "User not found" });
     }
-}
 
-module.exports = AuthMiddleware;
+    if (user.role !== 'admin') {
+      return res.status(403).json({ message: "Access denied. Admin privileges required." });
+    }
+
+    // Attach user to request
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("Admin middleware error:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Alias for backward compatibility
+const isAuthenticated = requireAuth;
+
+module.exports = {
+  requireAuth,
+  requireAdmin,
+  isAuthenticated
+};

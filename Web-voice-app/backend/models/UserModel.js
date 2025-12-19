@@ -3,7 +3,7 @@ const db = require("../config/database");
 class UserModel {
   static findByEmail(email) {
     return new Promise((resolve, reject) => {
-      const query = "SELECT * FROM users WHERE email = ?";
+      const query = "SELECT id, username, email, password_hash, role, created_at, updated_at, is_active, last_login FROM users WHERE email = ?";
       db.query(query, [email], (err, result) => {
         if (err) reject(err);
         else resolve(result[0]);
@@ -21,10 +21,10 @@ class UserModel {
     });
   }
 
-  static create(username, email, passwordHash) {
+  static create(username, email, passwordHash, role = 'user') {
     return new Promise((resolve, reject) => {
-      const query = "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)";
-      db.query(query, [username, email, passwordHash], (err, result) => {
+      const query = "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)";
+      db.query(query, [username, email, passwordHash, role], (err, result) => {
         if (err) reject(err);
         else resolve(result.insertId);
       });
@@ -33,7 +33,7 @@ class UserModel {
 
   static findById(userId) {
     return new Promise((resolve, reject) => {
-      const query = "SELECT id, username, email, created_at, updated_at, is_active, last_login FROM users WHERE id = ?";
+      const query = "SELECT id, username, email, role, created_at, updated_at, is_active, last_login FROM users WHERE id = ?";
       db.query(query, [userId], (err, result) => {
         if (err) reject(err);
         else resolve(result[0]);
