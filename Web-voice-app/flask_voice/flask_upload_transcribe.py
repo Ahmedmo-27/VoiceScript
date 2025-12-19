@@ -41,28 +41,7 @@ CORS(app, resources={
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
-}, supports_credentials=True)
-
-# Add explicit CORS headers as backup for all responses
-@app.after_request
-def after_request(response):
-    """Add CORS headers to all responses."""
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    return response
-
-# Handle OPTIONS requests for CORS preflight
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        from flask import Response
-        response = Response()
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add('Access-Control-Allow-Headers', "Content-Type, Authorization")
-        response.headers.add('Access-Control-Allow-Methods', "GET, POST, PUT, DELETE, OPTIONS")
-        return response
+})
 
 # Configuration
 UPLOAD_FOLDER = os.path.normpath('uploads')
@@ -395,11 +374,6 @@ def transcribe_file():
             "type": type(e).__name__
         }), 500
 
-
-@app.route("/api/transcribe", methods=["POST"])
-def transcribe_api():
-    """Transcribe audio file from microphone (API endpoint with /api prefix)."""
-    return transcribe()
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():

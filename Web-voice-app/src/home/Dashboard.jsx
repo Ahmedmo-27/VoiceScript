@@ -930,7 +930,7 @@ export default function HomePage() {
             timeoutRef.current = timeoutId;
 
             try {
-              const response = await fetch(`${API_CONFIG.MICROPHONE_SERVICE_URL}/api/transcribe`, {
+              const response = await fetch(`${API_CONFIG.MICROPHONE_SERVICE_URL}/transcribe`, {
                 method: "POST",
                 body: formData,
                 signal: controller.signal,
