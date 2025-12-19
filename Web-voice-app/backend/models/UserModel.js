@@ -58,6 +58,10 @@ class UserModel {
         updateFields.push("password_hash = ?");
         values.push(updates.password_hash);
       }
+      if (updates.role) {
+        updateFields.push("role = ?");
+        values.push(updates.role);
+      }
 
       if (updateFields.length === 0) {
         return reject(new Error("No fields to update"));
@@ -75,6 +79,16 @@ class UserModel {
   static updateLastLogin(userId) {
     return new Promise((resolve, reject) => {
       const query = "UPDATE users SET last_login = NOW() WHERE id = ?";
+      db.query(query, [userId], (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      });
+    });
+  }
+
+  static delete(userId) {
+    return new Promise((resolve, reject) => {
+      const query = "DELETE FROM users WHERE id = ?";
       db.query(query, [userId], (err, result) => {
         if (err) reject(err);
         else resolve(result);

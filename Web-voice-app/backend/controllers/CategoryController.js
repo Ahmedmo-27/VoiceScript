@@ -1,4 +1,5 @@
 const CategoryModel = require("../models/CategoryModel");
+const NoteModel = require("../models/NoteModel");
 
 class CategoryController {
   static async getUserCategories(req, res) {
@@ -63,6 +64,9 @@ class CategoryController {
     const { categoryId } = req.params;
 
     try {
+      // First, remove this category from any notes that use it
+      await NoteModel.removeCategoryFromNotes(categoryId);
+
       const result = await CategoryModel.delete(categoryId);
       if (result.affectedRows === 0) {
         return res.status(404).json({ message: "Category not found" });

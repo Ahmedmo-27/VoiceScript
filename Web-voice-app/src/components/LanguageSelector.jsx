@@ -71,7 +71,7 @@ export default function LanguageSelector({ selectedLanguage, onLanguageChange })
               <FiGlobe />
               <span>Select Language</span>
             </div>
-            <div className="language-list">
+            <div className="language-list" >
               {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
                 <button
                   key={code}

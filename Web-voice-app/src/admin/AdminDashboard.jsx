@@ -26,8 +26,10 @@ import {
   FaServer,
   FaArrowUp,
   FaArrowDown,
+  FaEdit,
+  FaTrash,
 } from "react-icons/fa";
-import { FiLogOut } from "react-icons/fi";
+import { FiLogOut, FiHome } from "react-icons/fi";
 import API_CONFIG from "../config/api";
 
 const logoImage = "/VoiceScript Logo1.png";
@@ -97,6 +99,9 @@ function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [error, setError] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editFormData, setEditFormData] = useState({ username: "", email: "", role: "" });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Check if user is admin
   useEffect(() => {
@@ -124,7 +129,7 @@ function AdminPage() {
         }
 
         const data = await response.json();
-        
+
         if (!data.isAdmin) {
           // User is authenticated but not admin, redirect to regular dashboard
           navigate("/", { replace: true });
@@ -159,48 +164,119 @@ function AdminPage() {
     checkAdminAccess();
   }, [navigate, location.pathname]);
 
+  const handleEditUser = (user) => {
+    setEditingUser(user);
+    setEditFormData({
+      username: user.username,
+      email: user.email,
+      role: user.role || "user",
+    });
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/admin/users/${userId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (response.ok) {
+        // Refresh dashboard data
+        const dashboardResponse = await fetch(`${API_CONFIG.BACKEND_URL}/api/admin/dashboard`, {
+          credentials: "include",
+        });
+        if (dashboardResponse.ok) {
+          const dashboardData = await dashboardResponse.json();
+          setAnalytics(dashboardData);
+        }
+        alert("User deleted successfully.");
+      } else {
+        const errorData = await response.json();
+        alert(errorData.message || "Failed to delete user.");
+      }
+    } catch (error) {
+      console.error("Delete user error:", error);
+      alert("Error deleting user.");
+    }
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/admin/users/${editingUser.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(editFormData),
+      });
+
+      if (response.ok) {
+        setEditingUser(null);
+        // Refresh dashboard data
+        const dashboardResponse = await fetch(`${API_CONFIG.BACKEND_URL}/api/admin/dashboard`, {
+          credentials: "include",
+        });
+        if (dashboardResponse.ok) {
+          const dashboardData = await dashboardResponse.json();
+          setAnalytics(dashboardData);
+        }
+        alert("User updated successfully.");
+      } else {
+        const errorData = await response.json();
+        alert(errorData.message || "Failed to update user.");
+      }
+    } catch (error) {
+      console.error("Update user error:", error);
+      alert("Error updating user.");
+    }
+  };
+
   const kpis = analytics
     ? [
-        {
-          icon: <FaUsers color={THEMES.primary} size={28} />,
-          label: "Total Users",
-          value: analytics.kpis.totalUsers,
-          description: "Registered users",
-          color: THEMES.primary,
-          trend: "up",
-        },
-        {
-          icon: <FaMicrophone color={THEMES.secondary} size={28} />,
-          label: "Voice Sessions",
-          value: analytics.kpis.voiceSessions,
-          description: "Weekly sessions",
-          color: THEMES.secondary,
-          trend: "up",
-        },
-        {
-          icon: <FaPercentage color={THEMES.success} size={28} />,
-          label: "Avg Accuracy",
-          value: `${analytics.kpis.avgAccuracy}%`,
-          description: "Speech accuracy",
-          color: THEMES.success,
-          trend: "up",
-        },
-        {
-          icon: <FaExclamationTriangle color={THEMES.danger} size={28} />,
-          label: "Error Rate",
-          value: `${analytics.kpis.errorRate}%`,
-          description: "Processing errors",
-          color: THEMES.danger,
-          trend: "down",
-        },
-      ]
+      {
+        icon: <FaUsers color={THEMES.primary} size={28} />,
+        label: "Total Users",
+        value: analytics.kpis.totalUsers,
+        description: "Registered users",
+        color: THEMES.primary,
+        trend: "up",
+      },
+      {
+        icon: <FaMicrophone color={THEMES.secondary} size={28} />,
+        label: "Voice Sessions",
+        value: analytics.kpis.voiceSessions,
+        description: "Weekly sessions",
+        color: THEMES.secondary,
+        trend: "up",
+      },
+      {
+        icon: <FaPercentage color={THEMES.success} size={28} />,
+        label: "Avg Accuracy",
+        value: `${analytics.kpis.avgAccuracy}%`,
+        description: "Speech accuracy",
+        color: THEMES.success,
+        trend: "up",
+      },
+      {
+        icon: <FaExclamationTriangle color={THEMES.danger} size={28} />,
+        label: "Error Rate",
+        value: `${analytics.kpis.errorRate}%`,
+        description: "Processing errors",
+        color: THEMES.danger,
+        trend: "down",
+      },
+    ]
     : [];
 
   return (
     <div className="adm-container">
       {/* SIDEBAR */}
       <aside className="adm-sidebar">
-      <div className="logo">
+        <div className="logo">
           <img src={logoImage} alt="VoiceScript Logo" className="logo-img" />
         </div>
         <nav className="adm-nav">
@@ -218,48 +294,71 @@ function AdminPage() {
                 Monitor users, voice activity and system health
               </p>
             </div>
-            <button
-              onClick={async () => {
-                try {
-                  const response = await fetch(`${API_CONFIG.BACKEND_URL}/logout`, {
-                    method: "POST",
-                    credentials: "include",
-                  });
 
-                  if (response.ok) {
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                onClick={() => navigate("/")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 20px",
+                  backgroundColor: THEMES.primary,
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "16px",
+                  fontWeight: 600,
+                  transition: "0.2s",
+                }}
+              >
+                <FiHome /> Home
+              </button>
+
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${API_CONFIG.BACKEND_URL}/logout`, {
+                      method: "POST",
+                      credentials: "include",
+                    });
+
+                    if (response.ok) {
+                      navigate("/login", { replace: true });
+                    } else {
+                      alert("Error logging out. Please try again.");
+                    }
+                  } catch (error) {
+                    console.error("Logout error:", error);
+                    // Even if there's an error, redirect to login
                     navigate("/login", { replace: true });
-                  } else {
-                    alert("Error logging out. Please try again.");
                   }
-                } catch (error) {
-                  console.error("Logout error:", error);
-                  // Even if there's an error, redirect to login
-                  navigate("/login", { replace: true });
-                }
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 20px",
-                backgroundColor: THEMES.danger,
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "16px",
-                fontWeight: 600,
-                transition: "0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = "#d32f2f";
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = THEMES.danger;
-              }}
-            >
-              <FiLogOut /> Logout
-            </button>
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "10px 20px",
+                  backgroundColor: THEMES.danger,
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "16px",
+                  fontWeight: 600,
+                  transition: "0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.backgroundColor = "#d32f2f";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = THEMES.danger;
+                }}
+              >
+                <FiLogOut /> Logout
+              </button>
+            </div>
           </div>
         </header>
 
@@ -333,9 +432,9 @@ function AdminPage() {
                           };
                       }
                     };
-                    
+
                     const style = getNotificationStyle(notification.type);
-                    
+
                     return (
                       <div
                         key={index}
@@ -460,8 +559,8 @@ function AdminPage() {
                     </div>
                   </>
                 ) : (
-                  <div style={{ 
-                    textAlign: "center", 
+                  <div style={{
+                    textAlign: "center",
                     padding: "40px 20px",
                     color: THEMES.muted,
                     background: "#f8f9fa",
@@ -510,6 +609,7 @@ function AdminPage() {
                         <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Feedbacks</th>
                         <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Accuracy</th>
                         <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Status</th>
+                        <th style={{ padding: "12px 10px", borderBottom: "2px solid #d4d9ff" }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -552,6 +652,38 @@ function AdminPage() {
                               {user.isActive ? "Active" : "Inactive"}
                             </span>
                           </td>
+                          <td style={{ padding: "12px 10px" }}>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button
+                                onClick={() => handleEditUser(user)}
+                                style={{
+                                  padding: "6px",
+                                  borderRadius: "4px",
+                                  border: "none",
+                                  backgroundColor: THEMES.primary,
+                                  color: "white",
+                                  cursor: "pointer",
+                                }}
+                                title="Edit User"
+                              >
+                                <FaEdit />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                style={{
+                                  padding: "6px",
+                                  borderRadius: "4px",
+                                  border: "none",
+                                  backgroundColor: THEMES.danger,
+                                  color: "white",
+                                  cursor: "pointer",
+                                }}
+                                title="Delete User"
+                              >
+                                <FaTrash />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -586,6 +718,88 @@ function AdminPage() {
           </>
         )}
       </main>
+
+      {/* EDIT USER MODAL */}
+      {editingUser && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          backgroundColor: "rgba(0,0,0,0.5)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: "white",
+            padding: "30px",
+            borderRadius: "12px",
+            width: "400px",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.2)"
+          }}>
+            <h2 style={{ marginBottom: "20px" }}>Edit User</h2>
+            <form onSubmit={handleUpdateUser}>
+              <div style={{ marginBottom: "15px" }}>
+                <label style={{ display: "block", marginBottom: "5px", fontWeight: 600 }}>Username</label>
+                <input
+                  type="text"
+                  value={editFormData.username}
+                  onChange={(e) => setEditFormData({ ...editFormData, username: e.target.value })}
+                  style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #ddd" }}
+                  required
+                />
+              </div>
+              <div style={{ marginBottom: "15px" }}>
+                <label style={{ display: "block", marginBottom: "5px", fontWeight: 600 }}>Email</label>
+                <input
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #ddd" }}
+                  required
+                />
+              </div>
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", marginBottom: "5px", fontWeight: 600 }}>Role</label>
+                <select
+                  value={editFormData.role}
+                  onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value })}
+                  style={{ width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #ddd" }}
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  style={{ padding: "10px 20px", borderRadius: "6px", border: "1px solid #ddd", cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: "6px",
+                    border: "none",
+                    backgroundColor: THEMES.primary,
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer"
+                  }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -40,16 +40,11 @@ export default function Login() {
       }
 
       // Login successful - session is stored on server
-      alert(`Welcome ${data.username}!`);
-      
-      // Check user role and redirect accordingly
-      // Backend finds user by email, validates password, and returns role
       const userRole = data.role || 'user';
-      
       if (userRole === 'admin') {
         navigate("/admin", { replace: true });
       } else {
-        navigate("/", { replace: true }); // redirect regular users to dashboard
+        navigate("/", { replace: true, state: { welcomeName: data.username } }); // Pass name to dashboard
       }
     } catch (err) {
       console.error("Fetch/network error:", err);

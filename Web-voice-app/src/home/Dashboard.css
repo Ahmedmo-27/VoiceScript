@@ -33,11 +33,15 @@
 /* ------------ Layout ------------ */
 .app-container {
   display: flex;
+  width: 100vw;
   height: 100vh;
   background: var(--bg-primary);
   font-family: "Inter", sans-serif;
   color: var(--text-primary);
   transition: background-color 0.3s ease, color 0.3s ease;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
 }
 
 /* ------------ Sidebar ------------ */
@@ -117,6 +121,8 @@
   flex: 1;
   padding: 30px 45px;
   overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 /* Top Bar */
@@ -1027,6 +1033,7 @@
     transform: translateX(100%);
     opacity: 0;
   }
+
   to {
     transform: translateX(0);
     opacity: 1;
@@ -1037,6 +1044,7 @@
   from {
     opacity: 1;
   }
+
   to {
     opacity: 0;
   }
@@ -1286,9 +1294,12 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.6;
   }

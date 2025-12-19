@@ -5,14 +5,14 @@ class NoteModel {
     return new Promise((resolve, reject) => {
       let query = "SELECT n.*, c.name as category_name FROM notes n LEFT JOIN categories c ON n.category_id = c.id WHERE n.user_id = ?";
       const params = [userId];
-      
+
       if (categoryId) {
         query += " AND n.category_id = ?";
         params.push(categoryId);
       }
-      
+
       query += " ORDER BY n.pinned DESC, n.updated_at DESC";
-      
+
       db.query(query, params, (err, result) => {
         if (err) reject(err);
         else resolve(result);
@@ -44,7 +44,7 @@ class NoteModel {
       });
     });
   }
-  
+
   static createAndReturn(userId, title, content, color = "#ffffff", categoryId = null) {
     return new Promise((resolve, reject) => {
       const query = "INSERT INTO notes (user_id, title, content, color, category_id) VALUES (?, ?, ?, ?, ?)";
@@ -147,6 +147,16 @@ class NoteModel {
           resolve(newId);
         }).catch(reject);
       }).catch(reject);
+    });
+  }
+
+  static removeCategoryFromNotes(categoryId) {
+    return new Promise((resolve, reject) => {
+      const query = "UPDATE notes SET category_id = NULL WHERE category_id = ?";
+      db.query(query, [categoryId], (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      });
     });
   }
 }

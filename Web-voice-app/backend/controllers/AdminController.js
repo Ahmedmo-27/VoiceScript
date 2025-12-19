@@ -9,27 +9,27 @@ class AdminController {
     try {
       // Get user statistics
       const userStats = await AdminController.getUserStatistics();
-      
+
       // Get transcription statistics
       const transcriptionStats = await FeedbackModel.getStatistics();
-      
+
       // Get note statistics
       const noteStats = await AdminController.getNoteStatistics();
-      
+
       // Get notifications/alerts data
       const notificationsData = await AdminController.getNotifications();
-      
+
       // Get feedback statistics
       const feedbackStats = await FeedbackModel.getStatistics();
-      
+
       // Calculate accuracy from feedback
       const overallAccuracy = feedbackStats.overall_accuracy || 100.00;
       const totalErrors = feedbackStats.total_transcription_errors || 0;
       const totalWords = feedbackStats.total_words_processed || 0;
-      
+
       // Get usage data (notes created per day for last 7 days)
       const usageData = await AdminController.getUsageData();
-      
+
       const dashboardData = {
         usage: usageData,
         accuracy: [
@@ -74,13 +74,13 @@ class AdminController {
         SUM(CASE WHEN is_active = 1 OR is_active IS NULL THEN 1 ELSE 0 END) as activeUsers,
         SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) as inactiveUsers
         FROM users`;
-      
+
       db.query(query, [], (err, result) => {
         if (err) {
           reject(err);
         } else {
           const stats = result[0];
-          
+
           // Get detailed user table with statistics
           const userTableQuery = `SELECT 
             u.id,
@@ -99,7 +99,7 @@ class AdminController {
             LEFT JOIN feedback f ON u.id = f.user_id
             GROUP BY u.id, u.username, u.email, u.role, u.created_at, u.last_login, u.is_active
             ORDER BY u.created_at DESC`;
-          
+
           db.query(userTableQuery, [], (err, userTable) => {
             if (err) {
               reject(err);
@@ -134,7 +134,7 @@ class AdminController {
         COUNT(*) as totalNotes,
         COUNT(DISTINCT user_id) as usersWithNotes
         FROM notes`;
-      
+
       db.query(query, [], (err, result) => {
         if (err) reject(err);
         else resolve(result[0]);
@@ -153,7 +153,7 @@ class AdminController {
         WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
         GROUP BY DATE(created_at), DAYNAME(created_at)
         ORDER BY date ASC`;
-      
+
       db.query(query, [], (err, result) => {
         if (err) {
           reject(err);
@@ -163,19 +163,19 @@ class AdminController {
             date: row.dayName.substring(0, 3), // Mon, Tue, etc.
             sessions: row.sessions
           }));
-          
+
           // Fill in missing days with 0
           const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
           const usageMap = {};
           usage.forEach(item => {
             usageMap[item.date] = item.sessions;
           });
-          
+
           const fullUsage = days.map(day => ({
             date: day,
             sessions: usageMap[day] || 0
           }));
-          
+
           resolve(fullUsage);
         }
       });
@@ -186,21 +186,21 @@ class AdminController {
   static async getNotifications() {
     return new Promise((resolve, reject) => {
       const notifications = [];
-      
+
       // Query 1: Check today's usage vs yesterday's usage
       const usageQuery = `SELECT 
         (SELECT COUNT(*) FROM notes WHERE DATE(created_at) = CURDATE()) as todayNotes,
         (SELECT COUNT(*) FROM notes WHERE DATE(created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)) as yesterdayNotes`;
-      
+
       db.query(usageQuery, [], (err, usageResult) => {
         if (err) {
           reject(err);
           return;
         }
-        
+
         const todayNotes = usageResult[0]?.todayNotes || 0;
         const yesterdayNotes = usageResult[0]?.yesterdayNotes || 0;
-        
+
         // Calculate usage change percentage
         if (yesterdayNotes > 0) {
           const changePercent = Math.round(((todayNotes - yesterdayNotes) / yesterdayNotes) * 100);
@@ -218,24 +218,24 @@ class AdminController {
             });
           }
         }
-        
+
         // Query 2: Check error rate
         const errorQuery = `SELECT 
           COALESCE(SUM(error_count), 0) as totalErrors,
           COALESCE(SUM(total_words), 0) as totalWords
           FROM feedback 
           WHERE DATE(created_at) = CURDATE()`;
-        
+
         db.query(errorQuery, [], (err, errorResult) => {
           if (err) {
             reject(err);
             return;
           }
-          
+
           const totalErrors = errorResult[0]?.totalErrors || 0;
           const totalWords = errorResult[0]?.totalWords || 0;
           const errorRate = totalWords > 0 ? (totalErrors / totalWords) * 100 : 0;
-          
+
           if (errorRate > 5) {
             notifications.push({
               type: 'danger',
@@ -243,16 +243,16 @@ class AdminController {
               message: `High error rate detected: ${errorRate.toFixed(1)}% of transcriptions have errors.`
             });
           }
-          
+
           // Query 3: Check new user registrations
           const newUsersQuery = `SELECT COUNT(*) as newUsers FROM users WHERE DATE(created_at) = CURDATE()`;
-          
+
           db.query(newUsersQuery, [], (err, newUsersResult) => {
             if (err) {
               reject(err);
               return;
             }
-            
+
             const newUsers = newUsersResult[0]?.newUsers || 0;
             if (newUsers > 0) {
               notifications.push({
@@ -261,14 +261,14 @@ class AdminController {
                 message: `${newUsers} new user${newUsers > 1 ? 's' : ''} registered today.`
               });
             }
-            
+
             // Always add system status
             notifications.push({
               type: 'success',
               title: 'System Status',
               message: 'All services running normally.'
             });
-            
+
             resolve(notifications);
           });
         });
@@ -299,8 +299,8 @@ class AdminController {
     try {
       // Check if user is authenticated
       if (!req.session || !req.session.userId) {
-        return res.status(401).json({ 
-          message: "Not authenticated", 
+        return res.status(401).json({
+          message: "Not authenticated",
           isAdmin: false,
           role: null
         });
@@ -308,10 +308,10 @@ class AdminController {
 
       // Get user from database using session userId
       const user = await UserModel.findById(req.session.userId);
-      
+
       if (!user) {
-        return res.status(401).json({ 
-          message: "User not found", 
+        return res.status(401).json({
+          message: "User not found",
           isAdmin: false,
           role: null
         });
@@ -321,17 +321,59 @@ class AdminController {
       const userRole = user.role ? user.role.toString().trim().toLowerCase() : 'user';
       const isAdmin = userRole === 'admin';
 
-      return res.status(200).json({ 
+      return res.status(200).json({
         isAdmin,
         role: user.role || 'user'
       });
     } catch (error) {
       console.error("Check admin error:", error);
-      return res.status(500).json({ 
-        message: "Server error", 
+      return res.status(500).json({
+        message: "Server error",
         isAdmin: false,
         role: null
       });
+    }
+  }
+
+  // Update user (admin only)
+  static async updateUser(req, res) {
+    const { userId } = req.params;
+    const { username, email, role } = req.body;
+
+    try {
+      const updates = {};
+      if (username) updates.username = username;
+      if (email) updates.email = email;
+      if (role) updates.role = role;
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "No fields to update" });
+      }
+
+      await UserModel.update(userId, updates);
+      const updatedUser = await UserModel.findById(userId);
+      return res.status(200).json(updatedUser);
+    } catch (error) {
+      console.error("Update user error:", error);
+      return res.status(500).json({ message: "Server error", error: error.message });
+    }
+  }
+
+  // Delete user (admin only)
+  static async deleteUser(req, res) {
+    const { userId } = req.params;
+
+    try {
+      // Prevent deleting self
+      if (parseInt(userId) === req.session.userId) {
+        return res.status(400).json({ message: "You cannot delete your own admin account" });
+      }
+
+      await UserModel.delete(userId);
+      return res.status(200).json({ message: "User deleted successfully" });
+    } catch (error) {
+      console.error("Delete user error:", error);
+      return res.status(500).json({ message: "Server error", error: error.message });
     }
   }
 }

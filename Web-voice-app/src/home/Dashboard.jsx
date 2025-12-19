@@ -11,6 +11,15 @@ import "./Dashboard.css";
 
 const logoImage = "/VoiceScript Logo1.png";
 
+const THEMES = {
+  primary: "#3b57ff",
+  secondary: "#6f42c1",
+  success: "#4caf50",
+  danger: "#f44336",
+  warning: "#ff9800",
+  muted: "#7a7a9a",
+};
+
 export default function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -62,6 +71,7 @@ export default function HomePage() {
   const audioContextRef = useRef(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [hasTranscribed, setHasTranscribed] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const abortControllerRef = useRef(null);
   const timeoutRef = useRef(null);
 
@@ -91,13 +101,9 @@ export default function HomePage() {
 
         const userData = await response.json();
         const userRole = userData.role || 'user';
-        
-        // Redirect admin users to admin dashboard
-        if (userRole === 'admin') {
-          navigate("/admin", { replace: true });
-          return;
-        }
-        
+
+        // Redirect admin users to admin dashboard (REMOVED: admin can go home too)
+
         // Regular users continue to dashboard
         setUser({
           userId: userData.userId,
@@ -115,6 +121,15 @@ export default function HomePage() {
 
     fetchUser();
   }, [navigate, location.pathname]);
+
+  // Handle welcome message from login
+  useEffect(() => {
+    if (location.state?.welcomeName) {
+      showToast(`Welcome ${location.state.welcomeName}! 👋`, "success");
+      // Clear the state so it doesn't show again on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
   //  Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -165,34 +180,34 @@ export default function HomePage() {
     if (isRecording && analyserNode) {
       const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
       const bars = 30; // Increased number of bars for more detail
-      
+
       const updateVisualization = () => {
         if (!isRecording || !analyserNode) {
           return;
         }
-        
+
         analyserNode.getByteFrequencyData(dataArray);
-        
+
         // Calculate levels for each bar with enhanced sensitivity
         const barData = [];
         const samplesPerBar = Math.floor(dataArray.length / bars);
-        
+
         // Focus on voice frequencies (roughly 85Hz to 3400Hz)
         // Map to appropriate frequency bins
         const startFreq = Math.floor(dataArray.length * 0.05); // Start from ~5% of spectrum
         const endFreq = Math.floor(dataArray.length * 0.7); // End at ~70% of spectrum
         const voiceRange = endFreq - startFreq;
         const voiceBars = Math.floor(bars * 0.8); // Use 80% of bars for voice range
-        
+
         for (let i = 0; i < bars; i++) {
           let sum = 0;
           let count = 0;
-          
+
           if (i < voiceBars) {
             // Map to voice frequency range with more sensitivity
             const freqIndex = startFreq + Math.floor((i / voiceBars) * voiceRange);
             const range = Math.max(1, Math.floor(samplesPerBar * 0.5)); // Smaller range for more detail
-            
+
             for (let j = 0; j < range && (freqIndex + j) < dataArray.length; j++) {
               sum += dataArray[freqIndex + j];
               count++;
@@ -205,7 +220,7 @@ export default function HomePage() {
               count++;
             }
           }
-          
+
           const average = count > 0 ? sum / count : 0;
           // Enhanced sensitivity: amplify lower volumes and use exponential scaling
           const amplified = Math.pow(average / 255, 0.6) * 255; // Exponential scaling for better sensitivity
@@ -213,13 +228,13 @@ export default function HomePage() {
           const normalized = Math.max(8, Math.min(100, (amplified / 255) * 120)); // Boost max to 120% then clamp
           barData.push(normalized);
         }
-        
+
         setAudioLevels(barData);
         animationFrameRef.current = requestAnimationFrame(updateVisualization);
       };
-      
+
       updateVisualization();
-      
+
       return () => {
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
@@ -286,6 +301,23 @@ export default function HomePage() {
       }
     }
   }, [showModal, audioStream, mediaRecorder, analyserNode]);
+
+  // Handle outside click for modal with confirmation
+  const handleModalCloseRequest = (forceClose = false) => {
+    // If there's content and we're not forcing, show confirmation
+    if (!forceClose && (noteTitle.trim() || noteBody.trim())) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+
+    // Otherwise close everything
+    setShowModal(false);
+    setShowDiscardConfirm(false);
+    setEditingNote(null);
+    setNoteTitle("");
+    setNoteBody("");
+    setNoteColor("#ffffff");
+  };
 
   const handleLanguageChange = (languageCode) => {
     setSelectedLanguage(languageCode);
@@ -428,6 +460,12 @@ export default function HomePage() {
 
         if (response.ok) {
           setCategories(categories.filter(cat => cat.id !== itemToDelete.id));
+
+          // Update local notes state so they move to "All Notes"
+          setNotes(prevNotes => prevNotes.map(note =>
+            note.category_id === itemToDelete.id ? { ...note, category_id: null } : note
+          ));
+
           if (selectedCategoryId === itemToDelete.id) {
             setSelectedCategoryId(null);
           }
@@ -509,7 +547,7 @@ export default function HomePage() {
 
   const handleSave = async () => {
     if (!noteTitle.trim()) {
-      alert("Please enter a note title");
+      showToast("Please enter a note title", "error");
       return;
     }
 
@@ -550,14 +588,14 @@ export default function HomePage() {
           setNotes([note, ...notes]);
           showToast("New note created successfully!", "success");
         }
-        
+
         // Calculate word count for feedback
         const wordCount = noteBody.trim().split(/\s+/).filter(word => word.length > 0).length;
         setFeedbackData(prev => ({
           ...prev,
           totalWords: wordCount
         }));
-        
+
         // Close modal and reset form
         setShowModal(false);
         setEditingNote(null);
@@ -565,13 +603,13 @@ export default function HomePage() {
         setNoteBody("");
         setNoteColor("#ffffff");
         setSelectedCategoryId(null);
-        
+
         // Show feedback modal if user checked the checkbox
         if (wantToProvideFeedback) {
           setSavedNoteId(note.id);
           setShowFeedbackModal(true);
         }
-        
+
         // Reset feedback checkbox
         setWantToProvideFeedback(false);
       } else {
@@ -670,15 +708,18 @@ export default function HomePage() {
 
   // Drag and drop handlers
   const handleDragStart = (e, note) => {
-    setDraggedNote(note);
+    // Delay state update to let the browser initiate the drag before layout shifts
+    const noteToDrag = { ...note };
+    setTimeout(() => {
+      setDraggedNote(noteToDrag);
+    }, 0);
+
+    // Use text/plain and a string ID for reliability
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/html", note.id);
-    // Add visual feedback
-    e.currentTarget.style.opacity = "0.5";
+    e.dataTransfer.setData("text/plain", note.id.toString());
   };
 
   const handleDragEnd = (e) => {
-    e.currentTarget.style.opacity = "1";
     setDraggedNote(null);
     setDragOverSection(null);
     setDragOverCategoryId(null);
@@ -702,11 +743,20 @@ export default function HomePage() {
     }
   };
 
-  const handleDrop = (e, targetPinned, targetCategoryId) => {
+  const handleDrop = (e, targetPinned, targetCategoryId, isTrash = false) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (!draggedNote) return;
+
+    // If dropped in trash
+    if (isTrash) {
+      handleDelete(draggedNote.id);
+      setDraggedNote(null);
+      setDragOverSection(null);
+      setDragOverCategoryId(null);
+      return;
+    }
 
     // Determine target state
     const finalPinned = targetPinned !== null ? targetPinned : false;
@@ -846,7 +896,7 @@ export default function HomePage() {
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setAudioStream(stream);
-        
+
         // Create audio context and analyser for visualization
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         audioContextRef.current = audioContext;
@@ -862,7 +912,7 @@ export default function HomePage() {
         microphone.connect(gainNode);
         gainNode.connect(analyser);
         setAnalyserNode(analyser);
-        
+
         const recorder = new MediaRecorder(stream);
         let chunks = [];
 
@@ -1000,14 +1050,14 @@ export default function HomePage() {
               setIsTranscribing(false);
             } catch (err) {
               console.error("Error sending audio to server:", err);
-              
+
               // Don't show error if it was aborted (user might have started new recording)
               if (err.name === 'AbortError' && controller.signal.aborted) {
                 console.log("Request was aborted (likely due to new recording)");
                 setIsTranscribing(false);
                 return;
               }
-              
+
               let errorMessage = "Network error";
               if (err.name === 'AbortError') {
                 errorMessage = "Request timeout - the server took too long to respond";
@@ -1016,7 +1066,7 @@ export default function HomePage() {
               } else {
                 errorMessage = err.message || "Network error";
               }
-              
+
               showToast(`Error: ${errorMessage}`, "error");
               console.error("Full error details:", err);
               setIsTranscribing(false);
@@ -1378,6 +1428,23 @@ export default function HomePage() {
               <FiFileText /> {note.title}
             </a>
           ))}
+          <div className="sidebar-divider" style={{ margin: "15px 0", borderTop: "1px solid var(--border-color)", opacity: 0.3 }}></div>
+          <a
+            className={dragOverSection === "trash" ? "trash-active" : ""}
+            style={{
+              cursor: "default",
+              color: dragOverSection === "trash" ? "#dc3545" : "inherit",
+              backgroundColor: dragOverSection === "trash" ? "rgba(220, 53, 69, 0.1)" : "transparent",
+              transition: "all 0.2s ease",
+              borderRadius: "8px",
+              padding: "10px"
+            }}
+            onDragOver={(e) => handleDragOver(e, "trash")}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, null, null, true)}
+          >
+            <FiTrash2 /> Trash Bin
+          </a>
         </nav>
       </aside>
 
@@ -1643,20 +1710,50 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="notes-container">
-            {/* Pinned Notes Section - only show if there are pinned notes */}
-            {pinnedNotes.length > 0 && (
+            {/* Pinned Notes Section - show if there are pinned notes OR during drag */}
+            {(pinnedNotes.length > 0 || draggedNote) && (
               <>
-                <div className="notes-section">
+                <div
+                  className="notes-section"
+                  onDragOver={(e) => handleDragOver(e, "pinned")}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, true, null)}
+                  style={{
+                    border: dragOverSection === "pinned" ? "2px dashed #ffd700" : "2px solid transparent",
+                    borderRadius: "12px",
+                    padding: (pinnedNotes.length > 0 || (draggedNote && dragOverSection === "pinned")) ? "15px" : "0",
+                    transition: "all 0.2s ease",
+                    backgroundColor: dragOverSection === "pinned" ? "rgba(255, 215, 0, 0.05)" : "transparent",
+                    display: (pinnedNotes.length === 0 && !draggedNote) ? "none" : "block"
+                  }}
+                >
                   <h2 className="section-title"><FiMapPin style={{ color: "#ffd700", marginRight: "8px" }} /> Pinned Notes</h2>
+
+                  {/* Placeholder for empty pinned section during drag */}
+                  {pinnedNotes.length === 0 && draggedNote && (
+                    <div style={{
+                      textAlign: "center",
+                      padding: "30px",
+                      color: "#ffd700",
+                      fontStyle: "italic",
+                      border: "2px dashed #ffd700",
+                      borderRadius: "10px",
+                      backgroundColor: dragOverSection === "pinned" ? "rgba(255, 215, 0, 0.1)" : "transparent",
+                      margin: "10px 0"
+                    }}>
+                      drop here to add to pinned
+                    </div>
+                  )}
+
                   <div className="notes-grid">
                     {pinnedNotes.map((note) => (
                       <div
                         key={note.id}
                         className="note-card"
-                        draggable
+                        draggable="true"
                         onDragStart={(e) => handleDragStart(e, note)}
                         onDragEnd={handleDragEnd}
-                        style={{ 
+                        style={{
                           backgroundColor: note.color || "#ffffff",
                           cursor: "grab",
                           opacity: draggedNote?.id === note.id ? 0.5 : 1
@@ -1687,47 +1784,53 @@ export default function HomePage() {
                     ))}
                   </div>
                 </div>
-                {(categorizedNotes.length > 0 || uncategorizedNotes.length > 0) && <div className="section-divider"></div>}
+                {(categorizedNotes.length > 0 || (draggedNote && categories.length > 0)) && (uncategorizedNotes.length > 0 || pinnedNotes.length > 0) && <div className="section-divider"></div>}
               </>
             )}
 
-            {(categorizedNotes.length > 0 || categories.some(cat => dragOverSection === "category" && dragOverCategoryId === cat.id)) && (
+            {/* Category Notes Section - Show when categorized notes exist or we are dragging */}
+            {(categorizedNotes.length > 0 || (draggedNote && categories.length > 0)) && (
               <div>
                 <h2 className="section-title">Category Notes</h2>
-                <div className="categories-container">
+                <div className="categories-container" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                   {categories.map((category) => {
                     // Get notes for this category
                     const categoryNotes = categorizedNotes.filter(note => note.category_id === category.id);
                     const isDragOver = dragOverSection === "category" && dragOverCategoryId === category.id;
                     const isEditing = editingCategoryId === category.id;
-                    
+
+                    // Skip empty categories if not dragging
+                    if (categoryNotes.length === 0 && !draggedNote) return null;
+
                     return (
-                      <div 
-                        key={category.id} 
+                      <div
+                        key={category.id}
                         className="category-notes-section"
                         onDragOver={(e) => handleDragOver(e, "category", category.id)}
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, false, category.id)}
                         style={{
-                          border: isDragOver ? "2px dashed #3b57ff" : "2px solid transparent",
-                          borderRadius: "8px",
-                          padding: isDragOver ? "10px" : "0",
+                          border: isDragOver ? `2px dashed ${category.color || "#3b57ff"}` : "2px solid transparent",
+                          borderRadius: "12px",
+                          padding: (categoryNotes.length > 0 || isDragOver) ? "15px" : "0",
                           transition: "all 0.2s ease",
-                          backgroundColor: isDragOver ? "rgba(0, 123, 255, 0.05)" : "transparent",
-                          minHeight: categoryNotes.length === 0 ? "100px" : "auto",
-                          marginBottom: "30px",
-                          width: "100%"
+                          backgroundColor: isDragOver ? `${category.color}11` : "transparent", // Added alpha hex
+                          minHeight: (categoryNotes.length === 0 && draggedNote) ? "120px" : "auto",
+                          marginBottom: "20px",
+                          width: "100%",
+                          boxSizing: "border-box"
                         }}
                       >
-                        <div className="category-header" style={{ 
-                          display: "flex", 
-                          alignItems: "center", 
+                        <div className="category-header" style={{
+                          display: "flex",
+                          alignItems: "center",
                           gap: "10px",
                           marginBottom: "15px",
                           padding: "10px",
                           backgroundColor: "var(--bg-secondary)",
-                          borderRadius: "8px",
-                          borderLeft: `4px solid ${category.color || "#3b57ff"}`
+                          borderRadius: "10px",
+                          borderLeft: `5px solid ${category.color || "#3b57ff"}`,
+                          boxShadow: "0 2px 4px var(--shadow)"
                         }}>
                           {isEditing ? (
                             <input
@@ -1748,25 +1851,28 @@ export default function HomePage() {
                               style={{
                                 flex: 1,
                                 padding: "5px 10px",
-                                fontSize: "18px",
+                                fontSize: "16px",
                                 fontWeight: "600",
                                 border: "2px solid #3b57ff",
-                                borderRadius: "4px",
-                                outline: "none"
+                                borderRadius: "6px",
+                                outline: "none",
+                                background: "var(--bg-primary)",
+                                color: "var(--text-primary)"
                               }}
                             />
                           ) : (
-                            <h3 
+                            <h3
                               className="category-title"
                               onDoubleClick={() => {
                                 setEditingCategoryId(category.id);
                                 setEditingCategoryName(category.name);
                               }}
-                              style={{ 
+                              style={{
                                 flex: 1,
                                 cursor: "pointer",
                                 margin: 0,
-                                color: category.color || "#3b57ff"
+                                fontWeight: "600",
+                                color: "var(--text-primary)"
                               }}
                             >
                               {category.name}
@@ -1782,23 +1888,24 @@ export default function HomePage() {
                               }}
                               onMouseDown={(e) => e.stopPropagation()}
                               style={{
-                                width: "30px",
-                                height: "30px",
+                                width: "28px",
+                                height: "28px",
                                 borderRadius: "50%",
-                                border: `2px solid ${category.color || "#3b57ff"}`,
+                                border: "2px solid white",
                                 backgroundColor: category.color || "#3b57ff",
                                 cursor: "pointer",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                outline: "none"
+                                outline: "none",
+                                boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
                               }}
                               title="Change category color"
                             >
-                              <FiTag style={{ color: "white", fontSize: "14px" }} />
+                              <FiTag style={{ color: "white", fontSize: "12px" }} />
                             </button>
                             {showColorPicker === category.id && (
-                              <div 
+                              <div
                                 className="color-picker-popup"
                                 onClick={(e) => e.stopPropagation()}
                                 onMouseDown={(e) => e.stopPropagation()}
@@ -1808,13 +1915,13 @@ export default function HomePage() {
                                   right: "0",
                                   backgroundColor: "var(--bg-secondary)",
                                   padding: "10px",
-                                  borderRadius: "8px",
-                                  boxShadow: "0 4px 12px var(--shadow)",
+                                  borderRadius: "10px",
+                                  boxShadow: "0 8px 16px var(--shadow-strong)",
                                   zIndex: 10001,
                                   display: "flex",
                                   gap: "8px",
                                   flexWrap: "wrap",
-                                  width: "150px",
+                                  width: "160px",
                                   border: "1px solid var(--border-color)"
                                 }}
                               >
@@ -1829,16 +1936,17 @@ export default function HomePage() {
                                     }}
                                     onMouseDown={(e) => e.stopPropagation()}
                                     style={{
-                                      width: "30px",
-                                      height: "30px",
+                                      width: "32px",
+                                      height: "32px",
                                       borderRadius: "50%",
                                       backgroundColor: color,
-                                      border: "2px solid var(--border-color)",
+                                      border: "2px solid white",
                                       cursor: "pointer",
                                       transition: "transform 0.2s",
-                                      outline: "none"
+                                      outline: "none",
+                                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)"
                                     }}
-                                    onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.2)"}
+                                    onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.15)"}
                                     onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
                                   />
                                 ))}
@@ -1846,76 +1954,82 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        {categoryNotes.length === 0 && isDragOver && (
-                          <div style={{ 
-                            textAlign: "center", 
-                            padding: "20px", 
-                            color: "#3b57ff",
-                            fontStyle: "italic"
+
+                        {/* Placeholder for empty category during drag */}
+                        {categoryNotes.length === 0 && draggedNote && (
+                          <div style={{
+                            textAlign: "center",
+                            padding: "30px",
+                            color: category.color || "#3b57ff",
+                            fontStyle: "italic",
+                            border: `2px dashed ${category.color || "#3b57ff"}`,
+                            borderRadius: "10px",
+                            backgroundColor: isDragOver ? `${category.color}18` : "transparent"
                           }}>
-                            Drop note here
+                            drop here to add to category {category.name}
                           </div>
                         )}
+
                         {categoryNotes.length > 0 && (
                           <div className="notes-grid">
                             {categoryNotes.map((note) => (
-                            <div
-                              key={note.id}
-                              className="note-card"
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, note)}
-                              onDragEnd={handleDragEnd}
-                              style={{ 
-                                backgroundColor: note.color || "#ffffff",
-                                cursor: "grab",
-                                opacity: draggedNote?.id === note.id ? 0.5 : 1
-                              }}
-                              onClick={() => handleNoteClick(note)}
-                              onMouseEnter={() => setHoveredNoteId(note.id)}
-                              onMouseLeave={() => setHoveredNoteId(null)}
-                            >
-                              {hoveredNoteId === note.id && (
-                                <div className="quick-actions">
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handlePin(note); }}
-                                    className="quick-action-btn"
-                                    title={note.pinned ? "Unpin" : "Pin"}
-                                  >
-                                    <FiMapPin style={{ color: note.pinned ? "#ffd700" : "inherit" }} />
-                                  </button>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleEdit(note); }}
-                                    className="quick-action-btn"
-                                    title="Edit"
-                                  >
-                                    <FiEdit2 />
-                                  </button>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleDuplicate(note); }}
-                                    className="quick-action-btn"
-                                    title="Duplicate"
-                                  >
-                                    <FiCopy />
-                                  </button>
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }}
-                                    className="quick-action-btn"
-                                    title="Delete"
-                                  >
-                                    <FiTrash2 />
-                                  </button>
-                                </div>
-                              )}
-                              <h2>{highlightText(note.title, searchTerm)}</h2>
-                              <p>
-                                {note.content
-                                  ? (note.content.length > 100
-                                    ? highlightText(note.content.substring(0, 100) + "...", searchTerm)
-                                    : highlightText(note.content, searchTerm))
-                                  : "No content"}
-                              </p>
-                            </div>
-                          ))}
+                              <div
+                                key={note.id}
+                                className="note-card"
+                                draggable="true"
+                                onDragStart={(e) => handleDragStart(e, note)}
+                                onDragEnd={handleDragEnd}
+                                style={{
+                                  backgroundColor: note.color || "#ffffff",
+                                  cursor: "grab",
+                                  opacity: draggedNote?.id === note.id ? 0.5 : 1
+                                }}
+                                onClick={() => handleNoteClick(note)}
+                                onMouseEnter={() => setHoveredNoteId(note.id)}
+                                onMouseLeave={() => setHoveredNoteId(null)}
+                              >
+                                {hoveredNoteId === note.id && (
+                                  <div className="quick-actions">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handlePin(note); }}
+                                      className="quick-action-btn"
+                                      title={note.pinned ? "Unpin" : "Pin"}
+                                    >
+                                      <FiMapPin style={{ color: note.pinned ? "#ffd700" : "inherit" }} />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleEdit(note); }}
+                                      className="quick-action-btn"
+                                      title="Edit"
+                                    >
+                                      <FiEdit2 />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleDuplicate(note); }}
+                                      className="quick-action-btn"
+                                      title="Duplicate"
+                                    >
+                                      <FiCopy />
+                                    </button>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }}
+                                      className="quick-action-btn"
+                                      title="Delete"
+                                    >
+                                      <FiTrash2 />
+                                    </button>
+                                  </div>
+                                )}
+                                <h2>{highlightText(note.title, searchTerm)}</h2>
+                                <p>
+                                  {note.content
+                                    ? (note.content.length > 100
+                                      ? highlightText(note.content.substring(0, 100) + "...", searchTerm)
+                                      : highlightText(note.content, searchTerm))
+                                    : "No content"}
+                                </p>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -1925,9 +2039,9 @@ export default function HomePage() {
               </div>
             )}
 
-            {((categorizedNotes.length > 0 || categories.some(cat => dragOverSection === "category" && dragOverCategoryId === cat.id)) && uncategorizedNotes.length > 0) && <div className="section-divider"></div>}
+            {((categorizedNotes.length > 0 || (draggedNote && categories.length > 0)) && uncategorizedNotes.length > 0) && <div className="section-divider"></div>}
 
-            <div 
+            <div
               className="notes-section"
               onDragOver={(e) => handleDragOver(e, "uncategorized")}
               onDragLeave={handleDragLeave}
@@ -1943,9 +2057,9 @@ export default function HomePage() {
             >
               {uncategorizedNotes.length > 0 && <h2 className="section-title">All Notes</h2>}
               {uncategorizedNotes.length === 0 && dragOverSection === "uncategorized" && (
-                <div style={{ 
-                  textAlign: "center", 
-                  padding: "20px", 
+                <div style={{
+                  textAlign: "center",
+                  padding: "20px",
                   color: "#3b57ff",
                   fontStyle: "italic"
                 }}>
@@ -1971,10 +2085,10 @@ export default function HomePage() {
                   <div
                     key={note.id}
                     className="note-card"
-                    draggable
+                    draggable="true"
                     onDragStart={(e) => handleDragStart(e, note)}
                     onDragEnd={handleDragEnd}
-                    style={{ 
+                    style={{
                       backgroundColor: note.color || "#ffffff",
                       cursor: "grab",
                       opacity: draggedNote?.id === note.id ? 0.5 : 1
@@ -2013,7 +2127,7 @@ export default function HomePage() {
       </main>
 
       {showModal && (
-        <div className="modal-overlay" onClick={() => { setShowModal(false); setEditingNote(null); }}>
+        <div className="modal-overlay" onClick={() => handleModalCloseRequest()}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
             <h2 className="modal-title">{editingNote ? "Edit Note" : "Create a New Note"}</h2>
 
@@ -2095,7 +2209,7 @@ export default function HomePage() {
                           } else {
                             backgroundColor = '#3b57ff'; // Blue
                           }
-                          
+
                           return (
                             <div
                               key={index}
@@ -2138,7 +2252,7 @@ export default function HomePage() {
             )}
 
             <div className="modal-buttons">
-              <button className="modal-btn cancel" onClick={() => { setShowModal(false); setEditingNote(null); }}>Cancel</button>
+              <button className="modal-btn cancel" onClick={() => handleModalCloseRequest()}>Cancel</button>
               <div style={{ display: "flex", gap: "10px", alignItems: "center", flexDirection: "column" }}>
                 <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
                   <LanguageSelector
@@ -2161,7 +2275,7 @@ export default function HomePage() {
       )}
 
       {/* Voice Command Button */}
-      <VoiceCommandButton onCommand={handleVoiceCommand} />
+      <VoiceCommandButton onCommand={handleVoiceCommand} showToast={showToast} />
 
       {/* Toast Notifications */}
       <div className="toast-container">
@@ -2179,195 +2293,228 @@ export default function HomePage() {
       </div>
 
       {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div 
-          className="modal-overlay" 
-          onClick={() => {
-            setShowDeleteModal(false);
-            setItemToDelete({ type: null, id: null, name: null });
-          }}
-          style={{ zIndex: 10000 }}
-        >
-          <div 
-            className="delete-modal-container" 
-            onClick={(e) => e.stopPropagation()}
+      {
+        showDeleteModal && (
+          <div
+            className="modal-overlay"
+            onClick={() => {
+              setShowDeleteModal(false);
+              setItemToDelete({ type: null, id: null, name: null });
+            }}
+            style={{ zIndex: 10000 }}
           >
-            <h2 className="delete-modal-title">Confirm Delete</h2>
-            <p className="delete-modal-message">
-              Are you sure you want to delete <strong>"{itemToDelete.name}"</strong>?
-              {itemToDelete.type === "category" && " Notes in this category will become uncategorized."}
-            </p>
-            <div className="delete-modal-buttons">
-              <button
-                className="delete-modal-btn cancel"
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setItemToDelete({ type: null, id: null, name: null });
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                className="delete-modal-btn confirm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  confirmDelete();
-                }}
-              >
-                Delete
-              </button>
+            <div
+              className="delete-modal-container"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="delete-modal-title">Confirm Delete</h2>
+              <p className="delete-modal-message">
+                Are you sure you want to delete <strong>"{itemToDelete.name}"</strong>?
+                {itemToDelete.type === "category" && " Notes in this category will become uncategorized."}
+              </p>
+              <div className="delete-modal-buttons">
+                <button
+                  className="delete-modal-btn cancel"
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setItemToDelete({ type: null, id: null, name: null });
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="delete-modal-btn confirm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    confirmDelete();
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Feedback Modal */}
-      {showFeedbackModal && (
-        <div 
-          className="modal-overlay" 
-          onClick={() => {
-            setShowFeedbackModal(false);
-            setSavedNoteId(null);
-            setFeedbackData({
-              totalWords: 0,
-              errorCount: 0,
-              errorWords: "",
-              feedbackType: "positive"
-            });
-          }}
-          style={{ zIndex: 10001 }}
-        >
-          <div 
-            className="feedback-modal-container" 
-            onClick={(e) => e.stopPropagation()}
+      {
+        showFeedbackModal && (
+          <div
+            className="modal-overlay"
+            onClick={() => {
+              setShowFeedbackModal(false);
+              setSavedNoteId(null);
+              setFeedbackData({
+                totalWords: 0,
+                errorCount: 0,
+                errorWords: "",
+                feedbackType: "positive"
+              });
+            }}
+            style={{ zIndex: 10001 }}
           >
-            <h2 className="feedback-modal-title">Provide Feedback</h2>
-            <p className="feedback-modal-description">
-              Help us improve VoiceScript by providing feedback on the transcription quality.
-            </p>
-            
-            <div className="feedback-form">
-              <div className="feedback-field">
-                <label>Total Words:</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={feedbackData.totalWords}
-                  onChange={(e) => setFeedbackData(prev => ({ ...prev, totalWords: parseInt(e.target.value) || 0 }))}
-                  className="feedback-input"
-                />
-              </div>
+            <div
+              className="feedback-modal-container"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="feedback-modal-title">Provide Feedback</h2>
+              <p className="feedback-modal-description">
+                Help us improve VoiceScript by providing feedback on the transcription quality.
+              </p>
 
-              <div className="feedback-field">
-                <label>Number of Errors:</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={feedbackData.errorCount}
-                  onChange={(e) => {
-                    const errorCount = parseInt(e.target.value) || 0;
-                    setFeedbackData(prev => ({ 
-                      ...prev, 
-                      errorCount,
-                      feedbackType: errorCount === 0 ? "positive" : "negative"
-                    }));
-                  }}
-                  className="feedback-input"
-                />
-              </div>
-
-              {feedbackData.errorCount > 0 && (
+              <div className="feedback-form">
                 <div className="feedback-field">
-                  <label>Error Words (comma-separated):</label>
+                  <label>Total Words:</label>
                   <input
-                    type="text"
-                    value={feedbackData.errorWords}
-                    onChange={(e) => setFeedbackData(prev => ({ ...prev, errorWords: e.target.value }))}
-                    placeholder="e.g., word1, word2, word3"
+                    type="number"
+                    min="0"
+                    value={feedbackData.totalWords}
+                    onChange={(e) => setFeedbackData(prev => ({ ...prev, totalWords: parseInt(e.target.value) || 0 }))}
                     className="feedback-input"
                   />
                 </div>
-              )}
 
-              <div className="feedback-field">
-                <label>Feedback Type:</label>
-                <select
-                  value={feedbackData.feedbackType}
-                  onChange={(e) => setFeedbackData(prev => ({ ...prev, feedbackType: e.target.value }))}
-                  className="feedback-select"
+                <div className="feedback-field">
+                  <label>Number of Errors:</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={feedbackData.errorCount}
+                    onChange={(e) => {
+                      const errorCount = parseInt(e.target.value) || 0;
+                      setFeedbackData(prev => ({
+                        ...prev,
+                        errorCount,
+                        feedbackType: errorCount === 0 ? "positive" : "negative"
+                      }));
+                    }}
+                    className="feedback-input"
+                  />
+                </div>
+
+                {feedbackData.errorCount > 0 && (
+                  <div className="feedback-field">
+                    <label>Error Words (comma-separated):</label>
+                    <input
+                      type="text"
+                      value={feedbackData.errorWords}
+                      onChange={(e) => setFeedbackData(prev => ({ ...prev, errorWords: e.target.value }))}
+                      placeholder="e.g., word1, word2, word3"
+                      className="feedback-input"
+                    />
+                  </div>
+                )}
+
+                <div className="feedback-field">
+                  <label>Feedback Type:</label>
+                  <select
+                    value={feedbackData.feedbackType}
+                    onChange={(e) => setFeedbackData(prev => ({ ...prev, feedbackType: e.target.value }))}
+                    className="feedback-select"
+                  >
+                    <option value="positive">Positive (No errors)</option>
+                    <option value="negative">Negative (Has errors)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="feedback-modal-buttons">
+                <button
+                  className="feedback-modal-btn cancel"
+                  onClick={() => {
+                    setShowFeedbackModal(false);
+                    setSavedNoteId(null);
+                    setFeedbackData({
+                      totalWords: 0,
+                      errorCount: 0,
+                      errorWords: "",
+                      feedbackType: "positive"
+                    });
+                  }}
                 >
-                  <option value="positive">Positive (No errors)</option>
-                  <option value="negative">Negative (Has errors)</option>
-                </select>
+                  Skip
+                </button>
+                <button
+                  className="feedback-modal-btn submit"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (!savedNoteId) {
+                      showToast("Note ID not found", "error");
+                      return;
+                    }
+
+                    try {
+                      const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/feedback/notes/${savedNoteId}`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        credentials: "include",
+                        body: JSON.stringify({
+                          totalWords: feedbackData.totalWords,
+                          errorCount: feedbackData.errorCount,
+                          errorWords: feedbackData.errorWords || null,
+                          feedbackType: feedbackData.feedbackType
+                        }),
+                      });
+
+                      if (response.ok) {
+                        showToast("Feedback submitted successfully! Thank you.", "success");
+                        setShowFeedbackModal(false);
+                        setSavedNoteId(null);
+                        setFeedbackData({
+                          totalWords: 0,
+                          errorCount: 0,
+                          errorWords: "",
+                          feedbackType: "positive"
+                        });
+                      } else {
+                        const data = await response.json();
+                        showToast("Failed to submit feedback: " + (data.message || "Unknown error"), "error");
+                      }
+                    } catch (error) {
+                      console.error("Error submitting feedback:", error);
+                      showToast("Error submitting feedback. Please try again.", "error");
+                    }
+                  }}
+                >
+                  Submit Feedback
+                </button>
               </div>
             </div>
+          </div>
+        )
+      }
 
-            <div className="feedback-modal-buttons">
-              <button
-                className="feedback-modal-btn cancel"
-                onClick={() => {
-                  setShowFeedbackModal(false);
-                  setSavedNoteId(null);
-                  setFeedbackData({
-                    totalWords: 0,
-                    errorCount: 0,
-                    errorWords: "",
-                    feedbackType: "positive"
-                  });
-                }}
-              >
-                Skip
-              </button>
-              <button
-                className="feedback-modal-btn submit"
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  if (!savedNoteId) {
-                    showToast("Note ID not found", "error");
-                    return;
-                  }
-
-                  try {
-                    const response = await fetch(`${API_CONFIG.BACKEND_URL}/api/feedback/notes/${savedNoteId}`, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      credentials: "include",
-                      body: JSON.stringify({
-                        totalWords: feedbackData.totalWords,
-                        errorCount: feedbackData.errorCount,
-                        errorWords: feedbackData.errorWords || null,
-                        feedbackType: feedbackData.feedbackType
-                      }),
-                    });
-
-                    if (response.ok) {
-                      showToast("Feedback submitted successfully! Thank you.", "success");
-                      setShowFeedbackModal(false);
-                      setSavedNoteId(null);
-                      setFeedbackData({
-                        totalWords: 0,
-                        errorCount: 0,
-                        errorWords: "",
-                        feedbackType: "positive"
-                      });
-                    } else {
-                      const data = await response.json();
-                      showToast("Failed to submit feedback: " + (data.message || "Unknown error"), "error");
-                    }
-                  } catch (error) {
-                    console.error("Error submitting feedback:", error);
-                    showToast("Error submitting feedback. Please try again.", "error");
-                  }
-                }}
-              >
-                Submit Feedback
-              </button>
+      {/* Discard Confirmation Modal */}
+      {
+        showDiscardConfirm && (
+          <div className="modal-overlay" style={{ zIndex: 10002 }}>
+            <div className="delete-modal-container" onClick={(e) => e.stopPropagation()}>
+              <h2 className="delete-modal-title">Discard Note?</h2>
+              <p className="delete-modal-message">
+                Are you sure you want to discard this note? Your changes will be lost.
+              </p>
+              <div className="delete-modal-buttons">
+                <button
+                  className="delete-modal-btn cancel"
+                  onClick={() => setShowDiscardConfirm(false)}
+                >
+                  No, Keep Editing
+                </button>
+                <button
+                  className="delete-modal-btn confirm"
+                  style={{ backgroundColor: THEMES?.danger || "#f44336" }}
+                  onClick={() => handleModalCloseRequest(true)}
+                >
+                  Yes, Discard
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
     </div>
   );
 }

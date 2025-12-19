@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { FiMic, FiX } from "react-icons/fi";
 import "./VoiceCommandButton.css";
 
-const VoiceCommandButton = ({ onCommand }) => {
+const VoiceCommandButton = ({ onCommand, showToast }) => {
   const [isListening, setIsListening] = useState(false);
   const [showCommands, setShowCommands] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -11,7 +11,7 @@ const VoiceCommandButton = ({ onCommand }) => {
   // Define processCommand before it's used
   const processCommand = React.useCallback((command) => {
     const lowerCommand = command.toLowerCase();
-    
+
     // "Create new note" or "create note"
     if (lowerCommand.includes("create") && (lowerCommand.includes("new note") || lowerCommand.includes("note"))) {
       onCommand("create");
@@ -27,20 +27,24 @@ const VoiceCommandButton = ({ onCommand }) => {
     }
 
     // "Delete last note" or "delete most recent note"
-    if ((lowerCommand.includes("delete") && lowerCommand.includes("last note")) || 
-        (lowerCommand.includes("delete") && lowerCommand.includes("most recent note"))) {
+    if ((lowerCommand.includes("delete") && lowerCommand.includes("last note")) ||
+      (lowerCommand.includes("delete") && lowerCommand.includes("most recent note"))) {
       onCommand("deleteLast");
       return;
     }
 
     // If no command matched
-    alert(`Command not recognized: "${command}". Available commands: "Create new note", "Open note called [name]", "Delete last note"`);
-  }, [onCommand]);
+    if (showToast) {
+      showToast(`Command not recognized: "${command}".`, "error");
+    } else {
+      console.warn(`Command not recognized: "${command}"`);
+    }
+  }, [onCommand, showToast]);
 
   useEffect(() => {
     // Check if browser supports speech recognition
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
+
     if (!SpeechRecognition) {
       console.warn("Speech recognition not supported in this browser");
       return;
@@ -75,7 +79,7 @@ const VoiceCommandButton = ({ onCommand }) => {
       console.error("Speech recognition error:", event.error);
       setIsListening(false);
       if (event.error === "no-speech") {
-        alert("No speech detected. Please try again.");
+        if (showToast) showToast("No speech detected. Please try again.", "error");
       }
     };
 
@@ -107,7 +111,7 @@ const VoiceCommandButton = ({ onCommand }) => {
         setShowCommands(false);
       } catch (error) {
         console.error("Error starting recognition:", error);
-        alert("Error starting voice recognition. Please try again.");
+        if (showToast) showToast("Error starting voice recognition.", "error");
       }
     }
   };
