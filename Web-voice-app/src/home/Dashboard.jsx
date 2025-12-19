@@ -54,6 +54,13 @@ export default function HomePage() {
   });
   const [savedNoteId, setSavedNoteId] = useState(null);
   const [audioStream, setAudioStream] = useState(null);
+  const [audioLevels, setAudioLevels] = useState([]);
+  const [analyserNode, setAnalyserNode] = useState(null);
+  const animationFrameRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const abortControllerRef = useRef(null);
+  const timeoutRef = useRef(null);
 
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
     // Load language preference from localStorage, default to en-US
@@ -156,12 +163,89 @@ export default function HomePage() {
     }
   }, [showColorPicker]);
 
+  // Audio visualization animation - More dynamic and sensitive
+  useEffect(() => {
+    if (isRecording && analyserNode) {
+      const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+      const bars = 30; // Increased number of bars for more detail
+      
+      const updateVisualization = () => {
+        if (!isRecording || !analyserNode) {
+          return;
+        }
+        
+        analyserNode.getByteFrequencyData(dataArray);
+        
+        // Calculate levels for each bar with enhanced sensitivity
+        const barData = [];
+        const samplesPerBar = Math.floor(dataArray.length / bars);
+        
+        // Focus on voice frequencies (roughly 85Hz to 3400Hz)
+        // Map to appropriate frequency bins
+        const startFreq = Math.floor(dataArray.length * 0.05); // Start from ~5% of spectrum
+        const endFreq = Math.floor(dataArray.length * 0.7); // End at ~70% of spectrum
+        const voiceRange = endFreq - startFreq;
+        const voiceBars = Math.floor(bars * 0.8); // Use 80% of bars for voice range
+        
+        for (let i = 0; i < bars; i++) {
+          let sum = 0;
+          let count = 0;
+          
+          if (i < voiceBars) {
+            // Map to voice frequency range with more sensitivity
+            const freqIndex = startFreq + Math.floor((i / voiceBars) * voiceRange);
+            const range = Math.max(1, Math.floor(samplesPerBar * 0.5)); // Smaller range for more detail
+            
+            for (let j = 0; j < range && (freqIndex + j) < dataArray.length; j++) {
+              sum += dataArray[freqIndex + j];
+              count++;
+            }
+          } else {
+            // Use regular sampling for remaining bars
+            const startIdx = i * samplesPerBar;
+            for (let j = 0; j < samplesPerBar && (startIdx + j) < dataArray.length; j++) {
+              sum += dataArray[startIdx + j];
+              count++;
+            }
+          }
+          
+          const average = count > 0 ? sum / count : 0;
+          // Enhanced sensitivity: amplify lower volumes and use exponential scaling
+          const amplified = Math.pow(average / 255, 0.6) * 255; // Exponential scaling for better sensitivity
+          // Normalize to 0-100 with minimum height for visibility
+          const normalized = Math.max(8, Math.min(100, (amplified / 255) * 120)); // Boost max to 120% then clamp
+          barData.push(normalized);
+        }
+        
+        setAudioLevels(barData);
+        animationFrameRef.current = requestAnimationFrame(updateVisualization);
+      };
+      
+      updateVisualization();
+      
+      return () => {
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+      };
+    } else {
+      // Clear visualization when not recording
+      setAudioLevels([]);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    }
+  }, [isRecording, analyserNode]);
+
   // Cleanup audio stream when component unmounts or modal closes
   useEffect(() => {
     return () => {
       if (audioStream) {
         audioStream.getTracks().forEach(track => track.stop());
         setAudioStream(null);
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
   }, [audioStream]);
@@ -171,6 +255,9 @@ export default function HomePage() {
     if (!showModal && audioStream) {
       audioStream.getTracks().forEach(track => track.stop());
       setAudioStream(null);
+      if (analyserNode) {
+        setAnalyserNode(null);
+      }
       if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         try {
           mediaRecorder.stop();
@@ -179,9 +266,28 @@ export default function HomePage() {
         }
       }
       setIsRecording(false);
+      setIsTranscribing(false);
       setMediaRecorder(null);
+      setAudioLevels([]);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      // Close audio context
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(err => console.error("Error closing audio context:", err));
+      }
+      audioContextRef.current = null;
+      // Clean up abort controller
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
     }
-  }, [showModal, audioStream, mediaRecorder]);
+  }, [showModal, audioStream, mediaRecorder, analyserNode]);
 
   const handleLanguageChange = (languageCode) => {
     setSelectedLanguage(languageCode);
@@ -725,6 +831,7 @@ export default function HomePage() {
         }
       }
       setIsRecording(false);
+      setIsTranscribing(true);
     } else {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert("Your browser does not support audio recording.");
@@ -739,6 +846,23 @@ export default function HomePage() {
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setAudioStream(stream);
+        
+        // Create audio context and analyser for visualization
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioContextRef.current = audioContext;
+        const analyser = audioContext.createAnalyser();
+        const microphone = audioContext.createMediaStreamSource(stream);
+        // Increased FFT size for better frequency resolution and more bars
+        analyser.fftSize = 512;
+        // Reduced smoothing for more dynamic response
+        analyser.smoothingTimeConstant = 0.3;
+        // Add gain node for sensitivity boost
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 2.0; // Boost sensitivity
+        microphone.connect(gainNode);
+        gainNode.connect(analyser);
+        setAnalyserNode(analyser);
+        
         const recorder = new MediaRecorder(stream);
         let chunks = [];
 
@@ -750,14 +874,30 @@ export default function HomePage() {
           // Stop all tracks in the stream
           stream.getTracks().forEach(track => track.stop());
           setAudioStream(null);
+          setAnalyserNode(null);
+          setAudioLevels([]);
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+          }
+          // Close audio context
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            try {
+              await audioContextRef.current.close();
+            } catch (e) {
+              console.error("Error closing audio context:", e);
+            }
+          }
+          audioContextRef.current = null;
 
           const blob = new Blob(chunks, { type: "audio/webm" });
           chunks = [];
 
           try {
             const arrayBuffer = await blob.arrayBuffer();
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            // Use a new AudioContext for decoding (separate from visualization)
+            const decodeContext = new (window.AudioContext || window.webkitAudioContext)();
+            const audioBuffer = await decodeContext.decodeAudioData(arrayBuffer);
+            decodeContext.close(); // Clean up after decoding
 
             const wavBlob = encodeWAV(audioBuffer);
             const formData = new FormData();
@@ -769,48 +909,155 @@ export default function HomePage() {
 
             console.log("Sending transcription request with language:", languageToSend);
             console.log("Audio blob size:", wavBlob.size, "bytes");
+            console.log("Service URL:", API_CONFIG.MICROPHONE_SERVICE_URL);
+
+            // Clean up any existing abort controller and timeout
+            if (abortControllerRef.current) {
+              abortControllerRef.current.abort();
+            }
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+            }
+
+            // Create new abort controller for this request
+            const controller = new AbortController();
+            abortControllerRef.current = controller;
+            const timeoutId = setTimeout(() => {
+              if (!controller.signal.aborted) {
+                controller.abort();
+              }
+            }, 60000); // Increased to 60 seconds for longer recordings
+            timeoutRef.current = timeoutId;
 
             try {
               const response = await fetch(`${API_CONFIG.MICROPHONE_SERVICE_URL}/transcribe`, {
                 method: "POST",
                 body: formData,
+                signal: controller.signal,
+                // Don't set Content-Type header, let browser set it with boundary for FormData
               });
 
-              const data = await response.json();
+              // Clear timeout on successful response
+              if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+              }
 
+              // Check if response is ok before trying to parse JSON
               if (!response.ok) {
-                console.error("Transcription error:", data);
+                let errorMessage = `Server error: ${response.status}`;
+                try {
+                  const errorData = await response.json();
+                  errorMessage = errorData.error || errorData.message || errorMessage;
+                } catch (e) {
+                  // If response is not JSON, try to get text
+                  try {
+                    const errorText = await response.text();
+                    if (errorText) errorMessage = errorText;
+                  } catch (e2) {
+                    // Ignore if we can't read response
+                  }
+                }
+                console.error("Transcription error:", errorMessage);
                 console.error("Response status:", response.status);
-                console.error("Error details:", JSON.stringify(data, null, 2));
-                alert(`Transcription error: ${data.error || data.message || "Unknown error"}`);
+                showToast(`Transcription error: ${errorMessage}`, "error");
+                setIsTranscribing(false);
+                return;
+              }
+
+              let data;
+              try {
+                data = await response.json();
+              } catch (e) {
+                console.error("Failed to parse JSON response:", e);
+                showToast("Invalid response from server", "error");
+                setIsTranscribing(false);
                 return;
               }
 
               if (data.text) {
-                setNoteBody(data.text);
-                showToast("Transcription completed!", "success");
+                // Concatenate with existing text if there's any
+                const existingText = noteBody.trim();
+                const newText = data.text.trim();
+                if (existingText && newText) {
+                  // Add space between existing and new text
+                  setNoteBody(existingText + " " + newText);
+                  showToast("Transcription appended!", "success");
+                } else if (newText) {
+                  // Only new text
+                  setNoteBody(newText);
+                  showToast("Transcription completed!", "success");
+                } else {
+                  showToast("No speech detected", "error");
+                }
               } else if (data.error) {
-                alert("Transcription error: " + data.error);
+                showToast("Transcription error: " + data.error, "error");
               } else {
-                alert("Unexpected response from server");
+                showToast("Unexpected response from server", "error");
               }
+              setIsTranscribing(false);
             } catch (err) {
               console.error("Error sending audio to server:", err);
-              alert(`Error sending audio to server: ${err.message || "Network error"}`);
+              
+              // Don't show error if it was aborted (user might have started new recording)
+              if (err.name === 'AbortError' && controller.signal.aborted) {
+                console.log("Request was aborted (likely due to new recording)");
+                setIsTranscribing(false);
+                return;
+              }
+              
+              let errorMessage = "Network error";
+              if (err.name === 'AbortError') {
+                errorMessage = "Request timeout - the server took too long to respond";
+              } else if (err.message.includes('Failed to fetch')) {
+                errorMessage = `Cannot connect to transcription service at ${API_CONFIG.MICROPHONE_SERVICE_URL}. Please check if the service is running.`;
+              } else {
+                errorMessage = err.message || "Network error";
+              }
+              
+              showToast(`Error: ${errorMessage}`, "error");
+              console.error("Full error details:", err);
+              setIsTranscribing(false);
+            } finally {
+              // Clean up abort controller reference
+              if (abortControllerRef.current === controller) {
+                abortControllerRef.current = null;
+              }
             }
           } catch (err) {
             console.error("Error processing audio:", err);
-            alert("Error processing audio: " + err.message);
+            showToast("Error processing audio: " + err.message, "error");
+            setIsTranscribing(false);
           }
         };
 
         recorder.onerror = (e) => {
           console.error("MediaRecorder error:", e);
-          alert("Recording error occurred");
+          showToast("Recording error occurred", "error");
           stream.getTracks().forEach(track => track.stop());
           setAudioStream(null);
+          setAnalyserNode(null);
+          setAudioLevels([]);
           setIsRecording(false);
+          setIsTranscribing(false);
           setMediaRecorder(null);
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+          }
+          // Close audio context
+          if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            audioContextRef.current.close().catch(err => console.error("Error closing audio context:", err));
+          }
+          audioContextRef.current = null;
+          // Clean up abort controller
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+          }
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+          }
         };
 
         recorder.start();
@@ -826,8 +1073,28 @@ export default function HomePage() {
           alert("Error accessing microphone: " + err.message);
         }
         setAudioStream(null);
+        setAnalyserNode(null);
+        setAudioLevels([]);
         setIsRecording(false);
+        setIsTranscribing(false);
         setMediaRecorder(null);
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+        // Close audio context
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(err => console.error("Error closing audio context:", err));
+        }
+        audioContextRef.current = null;
+        // Clean up abort controller
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
       }
     }
   };
@@ -1811,20 +2078,85 @@ export default function HomePage() {
               </label>
             </div>
 
+            {/* Voice Wave Visualization */}
+            {(isRecording || isTranscribing) && (
+              <div className="voice-wave-container">
+                {isRecording ? (
+                  <>
+                    <div className="voice-wave-bars">
+                      {audioLevels.length > 0 ? (
+                        audioLevels.map((level, index) => {
+                          // More dynamic color gradient based on level
+                          let backgroundColor;
+                          if (level > 70) {
+                            backgroundColor = '#ff0000'; // Red for very loud
+                          } else if (level > 50) {
+                            backgroundColor = '#ff4444'; // Bright red
+                          } else if (level > 35) {
+                            backgroundColor = '#ff8800'; // Orange
+                          } else if (level > 20) {
+                            backgroundColor = '#ffaa00'; // Yellow-orange
+                          } else {
+                            backgroundColor = '#007bff'; // Blue
+                          }
+                          
+                          return (
+                            <div
+                              key={index}
+                              className="voice-wave-bar"
+                              style={{
+                                height: `${Math.max(8, level)}%`,
+                                backgroundColor: backgroundColor,
+                                boxShadow: level > 30 ? `0 0 ${Math.min(8, level / 10)}px ${backgroundColor}` : 'none',
+                                transform: level > 50 ? 'scaleY(1.05)' : 'scaleY(1)'
+                              }}
+                            />
+                          );
+                        })
+                      ) : (
+                        // Show placeholder bars while initializing
+                        Array.from({ length: 30 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="voice-wave-bar"
+                            style={{
+                              height: '8%',
+                              backgroundColor: '#007bff',
+                              opacity: 0.3
+                            }}
+                          />
+                        ))
+                      )}
+                    </div>
+                    <p className="voice-wave-label">
+                      {audioLevels.length > 0 ? '🎤 Recording... Speak now' : '🎤 Initializing microphone...'}
+                    </p>
+                  </>
+                ) : (
+                  <div className="transcribing-indicator">
+                    <div className="transcribing-spinner"></div>
+                    <p className="voice-wave-label">🔄 Transcribing your speech...</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="modal-buttons">
               <button className="modal-btn cancel" onClick={() => { setShowModal(false); setEditingNote(null); }}>Cancel</button>
-              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                <LanguageSelector
-                  selectedLanguage={selectedLanguage}
-                  onLanguageChange={handleLanguageChange}
-                />
-                <button
-                  className={`mic-btn ${isRecording ? "recording" : ""}`}
-                  onClick={handleMicClick}
-                  title={`Record audio (${selectedLanguage})`}
-                >
-                  <FiMic />
-                </button>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center", flexDirection: "column" }}>
+                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                  <LanguageSelector
+                    selectedLanguage={selectedLanguage}
+                    onLanguageChange={handleLanguageChange}
+                  />
+                  <button
+                    className={`mic-btn ${isRecording ? "recording" : ""}`}
+                    onClick={handleMicClick}
+                    title={`Record audio (${selectedLanguage})`}
+                  >
+                    <FiMic />
+                  </button>
+                </div>
               </div>
               <button className="modal-btn save" onClick={handleSave}>Save</button>
             </div>
