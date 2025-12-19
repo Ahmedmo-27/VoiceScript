@@ -4,6 +4,7 @@ SpeechRecognition==3.10.0
 pydub==0.25.1
 Werkzeug==3.0.1
 gunicorn==21.2.0
+langdetect==1.0.9
 
 # Optional: For offline speech recognition (Sphinx fallback)
 # Uncomment the line below if you want offline transcription support

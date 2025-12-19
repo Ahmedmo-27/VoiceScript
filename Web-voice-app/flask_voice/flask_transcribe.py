@@ -20,25 +20,20 @@ from flask_cors import CORS
 import speech_recognition as sr
 import io
 import logging
+from langdetect import detect, LangDetectException
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-# Enable CORS with explicit configuration for all origins
-CORS(app, resources={
-    r"/*": {
-        "origins": "*",
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
-    }
-})
+CORS(app)  # Enable CORS
 
 # Supported languages for Google Speech Recognition
 # Format: language code (e.g., 'en-US', 'es-ES', 'fr-FR')
 # See: https://cloud.google.com/speech-to-text/docs/languages
 SUPPORTED_LANGUAGES = {
+    'auto': 'Auto Detect',
     'en-US': 'English (United States)',
     'en-GB': 'English (United Kingdom)',
     'es-ES': 'Spanish (Spain)',
@@ -73,6 +68,42 @@ SUPPORTED_LANGUAGES = {
     'he-IL': 'Hebrew (Israel)',
     'uk-UA': 'Ukrainian (Ukraine)',
     'el-GR': 'Greek (Greece)',
+}
+
+# Languages to try for auto-detection (in order of priority)
+AUTO_DETECT_LANGUAGES = [ 'en-US','ar-EG','ar-SA','fr-FR',  'en-GB',  'es-ES', 'de-DE', 'it-IT', 'pt-BR', 'ru-RU', 'ja-JP', 'ko-KR', 'zh-CN', 'nl-NL', 'tr-TR', 'hi-IN', 'sv-SE', 'pl-PL']
+
+# Mapping from langdetect codes to Google language codes
+LANG_DETECT_MAP = {
+    'en': ['en-US', 'en-GB'],
+    'es': ['es-ES', 'es-MX'],
+    'fr': ['fr-FR'],
+    'de': ['de-DE'],
+    'it': ['it-IT'],
+    'pt': ['pt-BR', 'pt-PT'],
+    'ru': ['ru-RU'],
+    'ja': ['ja-JP'],
+    'ko': ['ko-KR'],
+    'zh': ['zh-CN', 'zh-TW'],
+    'ar': ['ar-SA', 'ar-EG'],
+    'hi': ['hi-IN'],
+    'nl': ['nl-NL'],
+    'pl': ['pl-PL'],
+    'tr': ['tr-TR'],
+    'sv': ['sv-SE'],
+    'da': ['da-DK'],
+    'no': ['no-NO'],
+    'fi': ['fi-FI'],
+    'cs': ['cs-CZ'],
+    'hu': ['hu-HU'],
+    'ro': ['ro-RO'],
+    'th': ['th-TH'],
+    'vi': ['vi-VN'],
+    'id': ['id-ID'],
+    'ms': ['ms-MY'],
+    'he': ['he-IL'],
+    'uk': ['uk-UA'],
+    'el': ['el-GR'],
 }
 
 def validate_language(language_code):
@@ -186,8 +217,43 @@ def transcribe():
             
             # Transcribe audio with specified language
             logger.info(f"Starting transcription with language: {language}...")
-            text = recognizer.recognize_google(audio, language=language)
-            logger.info(f"Transcription successful: {text[:50]}...")
+            
+            if language == "auto":
+                # Auto-detect language by trying common languages
+                text = None
+                detected_lang = None
+                for lang in AUTO_DETECT_LANGUAGES:
+                    try:
+                        logger.info(f"Trying language: {lang}")
+                        candidate_text = recognizer.recognize_google(audio, language=lang)
+                        # Verify the detected language matches
+                        try:
+                            detected_lang_code = detect(candidate_text)
+                            if detected_lang_code in LANG_DETECT_MAP and lang in LANG_DETECT_MAP[detected_lang_code]:
+                                text = candidate_text
+                                detected_lang = lang
+                                logger.info(f"Auto-detected language: {lang} - {text[:50]}...")
+                                break
+                            else:
+                                logger.debug(f"Language mismatch: transcribed in {lang} but detected as {detected_lang_code}")
+                                continue
+                        except LangDetectException:
+                            logger.debug(f"Could not detect language for text from {lang}")
+                            continue
+                    except sr.UnknownValueError:
+                        logger.debug(f"No speech detected for {lang}")
+                        continue
+                    except sr.RequestError as e:
+                        logger.warning(f"Request error with {lang}: {e}")
+                        continue
+                
+                if not text:
+                    raise sr.UnknownValueError("Could not understand audio in any supported language")
+                
+                language = detected_lang
+            else:
+                text = recognizer.recognize_google(audio, language=language)
+                logger.info(f"Transcription successful: {text[:50]}...")
             
             return jsonify({
                 "text": text,

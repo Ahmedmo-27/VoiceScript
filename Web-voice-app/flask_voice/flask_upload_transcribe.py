@@ -26,6 +26,8 @@ from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import speech_recognition as sr
+from langdetect import detect, LangDetectException
+
 
 from audio_converter import convert_to_wav, cleanup_file
 
@@ -56,6 +58,7 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 # Format: language code (e.g., 'en-US', 'es-ES', 'fr-FR')
 # See: https://cloud.google.com/speech-to-text/docs/languages
 SUPPORTED_LANGUAGES = {
+    'auto': 'Auto Detect',
     'en-US': 'English (United States)',
     'en-GB': 'English (United Kingdom)',
     'es-ES': 'Spanish (Spain)',
@@ -92,6 +95,42 @@ SUPPORTED_LANGUAGES = {
     'el-GR': 'Greek (Greece)',
 }
 
+# Languages to try for auto-detection (in order of priority)
+AUTO_DETECT_LANGUAGES = ['ar-SA',  'en-US', 'ar-EG',  'en-GB', 'fr-FR', 'es-ES', 'de-DE', 'it-IT', 'pt-BR', 'ru-RU', 'ja-JP', 'ko-KR', 'zh-CN', 'nl-NL', 'tr-TR', 'hi-IN', 'sv-SE', 'pl-PL']
+
+# Mapping from langdetect codes to Google language codes
+LANG_DETECT_MAP = {
+    'en': ['en-US', 'en-GB'],
+    'es': ['es-ES', 'es-MX'],
+    'fr': ['fr-FR'],
+    'de': ['de-DE'],
+    'it': ['it-IT'],
+    'pt': ['pt-BR', 'pt-PT'],
+    'ru': ['ru-RU'],
+    'ja': ['ja-JP'],
+    'ko': ['ko-KR'],
+    'zh': ['zh-CN', 'zh-TW'],
+    'ar': ['ar-SA', 'ar-EG'],
+    'hi': ['hi-IN'],
+    'nl': ['nl-NL'],
+    'pl': ['pl-PL'],
+    'tr': ['tr-TR'],
+    'sv': ['sv-SE'],
+    'da': ['da-DK'],
+    'no': ['no-NO'],
+    'fi': ['fi-FI'],
+    'cs': ['cs-CZ'],
+    'hu': ['hu-HU'],
+    'ro': ['ro-RO'],
+    'th': ['th-TH'],
+    'vi': ['vi-VN'],
+    'id': ['id-ID'],
+    'ms': ['ms-MY'],
+    'he': ['he-IL'],
+    'uk': ['uk-UA'],
+    'el': ['el-GR'],
+}
+
 def validate_language(language_code):
     """Validate if language code is supported."""
     if not language_code:
@@ -122,63 +161,68 @@ def transcribe_speech(audio_path, language, recognizer):
     Transcribe speech audio using speech recognition.
     
     Returns:
-        tuple: (transcribed_text, error_message)
+        tuple: (transcribed_text, error_message, detected_language)
     """
     text = None
     error_message = None
+    detected_language = language
     
     try:
-        # Check file size and warn if very large
-        file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
-        if file_size_mb > 10:
-            logger.warning(f"Large file detected: {file_size_mb:.2f} MB. This may take longer to process.")
-        
-        logger.info(f"Opening audio file: {audio_path} ({file_size_mb:.2f} MB)")
         with sr.AudioFile(audio_path) as source:
-            # Get audio duration for logging
-            try:
-                duration = source.DURATION if hasattr(source, 'DURATION') else None
-                if duration:
-                    logger.info(f"Audio duration: {duration:.2f} seconds")
-            except:
-                pass
-            
             try:
                 recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                logger.info("Adjusted for ambient noise")
-            except Exception as e:
-                logger.warning(f"Could not adjust for ambient noise: {str(e)}")
-                # Continue anyway
+            except Exception:
+                pass  # Ignore ambient noise adjustment errors
             
-            logger.info("Recording audio data...")
             audio_data = recognizer.record(source)
-            logger.info(f"Audio data recorded: {len(audio_data.frame_data)} bytes")
         
         # Try Google Speech Recognition
-        logger.info(f"Starting Google Speech Recognition with language: {language}...")
-        try:
-            text = recognizer.recognize_google(audio_data, language=language)
-            logger.info(f"Transcription successful ({len(text)} chars)")
-        except sr.UnknownValueError:
-            error_message = "Could not understand the audio. The audio may contain only music, noise, or unclear speech."
-            logger.warning(error_message)
-        except sr.RequestError as e:
-            error_message = f"Recognition service error: {str(e)}"
-            logger.error(error_message)
-            # Check if it's a timeout or size-related error
-            if "timeout" in str(e).lower() or "too large" in str(e).lower():
-                error_message += " The audio file may be too long. Try splitting it into smaller segments."
+        if language == "auto":
+            # Auto-detect language by trying common languages
+            for lang in AUTO_DETECT_LANGUAGES:
+                try:
+                    logger.info(f"Trying language: {lang}")
+                    candidate_text = recognizer.recognize_google(audio_data, language=lang)
+                    # Verify the detected language matches
+                    try:
+                        detected_lang_code = detect(candidate_text)
+                        if detected_lang_code in LANG_DETECT_MAP and lang in LANG_DETECT_MAP[detected_lang_code]:
+                            text = candidate_text
+                            detected_language = lang
+                            logger.info(f"Auto-detected language: {lang} - {text[:50]}...")
+                            break
+                        else:
+                            logger.debug(f"Language mismatch: transcribed in {lang} but detected as {detected_lang_code}")
+                            continue
+                    except LangDetectException:
+                        logger.debug(f"Could not detect language for text from {lang}")
+                        continue
+                except sr.UnknownValueError:
+                    logger.debug(f"No speech detected for {lang}")
+                    continue
+                except sr.RequestError as e:
+                    logger.warning(f"Request error with {lang}: {e}")
+                    continue
+            
+            if not text:
+                error_message = "Could not understand the audio. The audio may contain only music, noise, or unclear speech in any supported language."
+                logger.warning(error_message)
+        else:
+            try:
+                text = recognizer.recognize_google(audio_data, language=language)
+                logger.info(f"Transcription successful ({len(text)} chars)")
+            except sr.UnknownValueError:
+                error_message = "Could not understand the audio. The audio may contain only music, noise, or unclear speech."
+                logger.warning(error_message)
+            except sr.RequestError as e:
+                error_message = f"Recognition service error: {str(e)}"
+                logger.error(error_message)
     
-    except MemoryError as e:
-        error_message = f"Out of memory while processing audio. The file may be too large. Error: {str(e)}"
-        logger.error(error_message)
     except Exception as e:
         error_message = f"Error transcribing speech: {str(e)}"
         logger.error(error_message)
-        import traceback
-        logger.error(traceback.format_exc())
     
-    return text, error_message
+    return text, error_message, detected_language
 
 
 @app.route("/api/analyze-file", methods=["POST"])
@@ -271,8 +315,7 @@ def transcribe_file():
             audio_path = os.path.normpath(temp_upload_path)
         else:
             # Convert to WAV using audio_converter
-            file_size_mb = os.path.getsize(temp_upload_path) / (1024 * 1024)
-            logger.info(f"Converting {file_ext} to WAV... (File size: {file_size_mb:.2f} MB)")
+            logger.info(f"Converting {file_ext} to WAV...")
             try:
                 output_dir = os.path.normpath(app.config['UPLOAD_FOLDER'])
                 temp_wav_path = convert_to_wav(temp_upload_path, output_dir=output_dir)
@@ -281,21 +324,12 @@ def transcribe_file():
                 
                 if not os.path.exists(audio_path):
                     raise FileNotFoundError(f"Converted file not found: {audio_path}")
-                logger.info(f"Conversion successful. Converted file size: {os.path.getsize(audio_path) / (1024 * 1024):.2f} MB")
             except ImportError as e:
-                logger.error(f"Import error during conversion: {str(e)}")
                 cleanup_file(temp_upload_path)
-                return jsonify({"success": False, "error": f"Audio conversion failed: {str(e)}. Please ensure pydub and ffmpeg are installed."}), 500
+                return jsonify({"success": False, "error": str(e)}), 500
             except (ValueError, RuntimeError, FileNotFoundError) as e:
-                logger.error(f"Conversion error: {str(e)}")
                 cleanup_file(temp_upload_path)
                 return jsonify({"success": False, "error": f"Audio conversion failed: {str(e)}"}), 400
-            except Exception as e:
-                logger.error(f"Unexpected conversion error: {str(e)}")
-                import traceback
-                logger.error(traceback.format_exc())
-                cleanup_file(temp_upload_path)
-                return jsonify({"success": False, "error": f"Audio conversion failed: {str(e)}"}), 500
         
         # Transcribe
         if not os.path.exists(audio_path):
@@ -305,21 +339,8 @@ def transcribe_file():
         audio_path = os.path.normpath(audio_path)
         
         # Transcribe
-        logger.info(f"Starting transcription... (Audio file: {audio_path})")
         recognizer = sr.Recognizer()
-        try:
-            text, error_message = transcribe_speech(audio_path, language, recognizer)
-        except Exception as e:
-            logger.error(f"Transcription error: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            cleanup_file(temp_upload_path)
-            if temp_wav_path and temp_wav_path != temp_upload_path:
-                cleanup_file(temp_wav_path)
-            return jsonify({
-                "success": False,
-                "error": f"Transcription failed: {str(e)}"
-            }), 500
+        text, error_message, detected_language = transcribe_speech(audio_path, language, recognizer)
         
         # Get file size BEFORE any cleanup (file must still exist)
         file_size_mb = 0
@@ -342,8 +363,8 @@ def transcribe_file():
             return jsonify({
                 "success": True,
                 "text": text,
-                "language": language,
-                "language_name": SUPPORTED_LANGUAGES.get(language, "Unknown"),
+                "language": detected_language,
+                "language_name": SUPPORTED_LANGUAGES.get(detected_language, "Unknown"),
                 "metadata": {
                     "needsConversion": not is_wav,
                     "fileExtension": file_ext,
@@ -366,147 +387,9 @@ def transcribe_file():
         cleanup_file(temp_upload_path)
         cleanup_file(temp_wav_path)
         logger.error(f"Error processing audio: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
         return jsonify({
             "success": False,
-            "error": f"Error processing audio: {str(e)}",
-            "type": type(e).__name__
-        }), 500
-
-
-@app.route("/transcribe", methods=["POST"])
-def transcribe():
-    """Transcribe audio file from microphone (direct WAV format)."""
-    try:
-        logger.info("Transcribe request received")
-        logger.info(f"Request method: {request.method}")
-        logger.info(f"Content-Type: {request.content_type}")
-        logger.info(f"Files received: {list(request.files.keys())}")
-        logger.info(f"Form data keys: {list(request.form.keys())}")
-        
-        # Get language parameter from form data or JSON
-        language = None
-        if request.is_json:
-            language = request.json.get('language')
-        else:
-            # For multipart/form-data requests
-            language = request.form.get('language')
-        
-        logger.info(f"Received language parameter: {language}")
-        language, language_error = validate_language(language)
-        
-        if language_error:
-            logger.warning(f"Language validation error: {language_error}")
-            return jsonify({"error": language_error}), 400
-        
-        logger.info(f"Using language: {language} ({SUPPORTED_LANGUAGES.get(language, 'Unknown')})")
-        
-        # Check if request has files
-        if not request.files:
-            logger.error("No files in request")
-            return jsonify({
-                "error": "No files provided in request",
-                "content_type": request.content_type,
-                "form_keys": list(request.form.keys())
-            }), 400
-        
-        # Check if audio file is present
-        if "audio" not in request.files:
-            logger.error(f"Audio file not found. Available keys: {list(request.files.keys())}")
-            return jsonify({
-                "error": "No audio file provided",
-                "available_keys": list(request.files.keys())
-            }), 400
-        
-        audio_file = request.files["audio"]
-        
-        # Check if file is empty
-        if audio_file.filename == '':
-            logger.error("Empty filename")
-            return jsonify({"error": "No file selected"}), 400
-        
-        logger.info(f"Processing file: {audio_file.filename}")
-        logger.info(f"Content type: {audio_file.content_type}")
-        
-        # Read audio file
-        audio_data = audio_file.read()
-        
-        if len(audio_data) == 0:
-            logger.error("Audio file is empty")
-            return jsonify({"error": "Audio file is empty"}), 400
-        
-        logger.info(f"Audio file size: {len(audio_data)} bytes")
-        
-        # Create BytesIO object
-        audio_bytes = io.BytesIO(audio_data)
-        
-        # Reset file pointer to beginning
-        audio_bytes.seek(0)
-        
-        recognizer = sr.Recognizer()
-        
-        try:
-            # Try to open as AudioFile
-            with sr.AudioFile(audio_bytes) as source:
-                logger.info("Audio file opened successfully")
-                
-                # Adjust for ambient noise
-                try:
-                    recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                    logger.info("Adjusted for ambient noise")
-                except Exception as e:
-                    logger.warning(f"Could not adjust for ambient noise: {str(e)}")
-                
-                # Read audio data
-                audio = recognizer.record(source)
-                logger.info(f"Audio recorded: {len(audio.frame_data)} bytes")
-            
-            # Transcribe audio with specified language
-            logger.info(f"Starting transcription with language: {language}...")
-            text = recognizer.recognize_google(audio, language=language)
-            logger.info(f"Transcription successful: {text[:50]}...")
-            
-            return jsonify({
-                "text": text,
-                "language": language,
-                "language_name": SUPPORTED_LANGUAGES.get(language, "Unknown")
-            })
-        
-        except sr.UnknownValueError:
-            logger.error("Could not understand audio")
-            return jsonify({"error": "Could not understand audio. Please ensure the audio contains clear speech."}), 400
-        
-        except sr.RequestError as e:
-            logger.error(f"Recognition service error: {str(e)}")
-            return jsonify({
-                "error": f"Recognition service error: {str(e)}",
-                "message": "Please check your internet connection and try again."
-            }), 500
-        
-        except ValueError as e:
-            logger.error(f"Audio format error: {str(e)}")
-            return jsonify({
-                "error": f"Invalid audio format: {str(e)}",
-                "message": "Please ensure the audio file is in WAV format."
-            }), 400
-        
-        except Exception as e:
-            logger.error(f"Unexpected error during transcription: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return jsonify({
-                "error": f"Error processing audio: {str(e)}",
-                "type": type(e).__name__
-            }), 500
-    
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return jsonify({
-            "error": f"Server error: {str(e)}",
-            "type": type(e).__name__
+            "error": f"Error processing audio: {str(e)}"
         }), 500
 
 
