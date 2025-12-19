@@ -1,0 +1,27 @@
+{
+  "name": "VoiceScript Flask Services",
+  "description": "Flask transcription services for VoiceScript",
+  "repository": "https://github.com/ahmedmo-27/VoiceScript",
+  "logo": "https://node-js-sample.herokuapp.com/node.png",
+  "keywords": ["flask", "python", "speech-recognition", "transcription"],
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    },
+    {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest"
+    }
+  ],
+  "env": {
+    "PYTHONUNBUFFERED": {
+      "value": "1"
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  }
+}
+

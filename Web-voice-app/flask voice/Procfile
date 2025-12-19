@@ -1,0 +1,3 @@
+web: gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 flask_upload_transcribe:app
+worker: gunicorn --bind 0.0.0.0:5003 --workers 2 --timeout 120 flask_transcribe:app
+
