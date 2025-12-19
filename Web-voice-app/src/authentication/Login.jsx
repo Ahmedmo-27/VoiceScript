@@ -3,6 +3,8 @@ import React, { useState } from "react";
 import API_CONFIG from "../config/api";
 import "./Login.css";
 
+const logoImage = "/VoiceScript Logo1.png";
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -60,7 +62,9 @@ export default function Login() {
 
   return (
     <div className="page-container">
-      <div className="top-logo">LOGO</div>
+      <div className="top-logo">
+        <img src={logoImage} alt="VoiceScript Logo" className="logo-img" />
+      </div>
 
       <div className="login-card">
         <h1 className="login-title">Login</h1>

@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import API_CONFIG from "../config/api";
 import "./Profile.css";
 
+const logoImage = "/VoiceScript Logo1.png";
+
 export default function Profile() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -162,6 +164,9 @@ export default function Profile() {
 
   return (
     <div className="profile-container">
+      <div className="profile-logo-container">
+        <img src={logoImage} alt="VoiceScript Logo" className="profile-logo-img" />
+      </div>
       <div className="profile-card">
         <div className="profile-header">
           <h1>Profile</h1>

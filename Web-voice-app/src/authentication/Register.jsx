@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import API_CONFIG from "../config/api";
 import "./Register.css";
 
+const logoImage = "/VoiceScript Logo1.png";
+
 export default function Register() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -50,7 +52,9 @@ export default function Register() {
 
   return (
     <div className="page-container">
-      <div className="top-logo">LOGO</div>
+      <div className="top-logo">
+        <img src={logoImage} alt="VoiceScript Logo" className="logo-img" />
+      </div>
 
       <div className="auth-card">
         <h1 className="auth-title">Register</h1>

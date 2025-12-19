@@ -9,6 +9,8 @@ import API_CONFIG from "../config/api";
 import { fetchNotes as apiFetchNotes, fetchCategories as apiFetchCategories, createCategory as apiCreateCategory, searchNotes as apiSearchNotes } from "../api/api.js";
 import "./Dashboard.css";
 
+const logoImage = "/VoiceScript Logo1.png";
+
 export default function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,6 +61,7 @@ export default function HomePage() {
   const animationFrameRef = useRef(null);
   const audioContextRef = useRef(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [hasTranscribed, setHasTranscribed] = useState(false);
   const abortControllerRef = useRef(null);
   const timeoutRef = useRef(null);
 
@@ -115,12 +118,6 @@ export default function HomePage() {
   //  Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // N -> 3shan new note
-      if (e.key === "n" && !e.ctrlKey && !e.metaKey && !showModal) {
-        e.preventDefault();
-        openNewNoteModal();
-      }
-
       // CTRL+K -> 3shan search
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -267,6 +264,7 @@ export default function HomePage() {
       }
       setIsRecording(false);
       setIsTranscribing(false);
+      setHasTranscribed(false);
       setMediaRecorder(null);
       setAudioLevels([]);
       if (animationFrameRef.current) {
@@ -330,7 +328,7 @@ export default function HomePage() {
         body: JSON.stringify({
           userId: user.userId,
           name: newCategoryName.trim(),
-          color: "#007bff"
+          color: "#3b57ff"
         }),
       });
 
@@ -382,7 +380,7 @@ export default function HomePage() {
 
   // Color palette options
   const colorPalette = [
-    "#007bff", "#28a745", "#ffc107", "#dc3545", "#6f42c1",
+    "#3b57ff", "#28a745", "#ffc107", "#dc3545", "#6f42c1",
     "#20c997", "#fd7e14", "#e83e8c", "#6c757d", "#17a2b8"
   ];
 
@@ -593,6 +591,7 @@ export default function HomePage() {
     setNoteColor(note.color || "#ffffff");
     setSelectedCategoryId(note.category_id || null);
     setWantToProvideFeedback(false);
+    setHasTranscribed(false);
     setShowModal(true);
   };
 
@@ -786,6 +785,7 @@ export default function HomePage() {
     setNoteColor("#ffffff");
     setSelectedCategoryId(null);
     setWantToProvideFeedback(false);
+    setHasTranscribed(false);
     setShowModal(true);
   };
 
@@ -983,10 +983,12 @@ export default function HomePage() {
                   // Add space between existing and new text
                   setNoteBody(existingText + " " + newText);
                   showToast("Transcription appended!", "success");
+                  setHasTranscribed(true);
                 } else if (newText) {
                   // Only new text
                   setNoteBody(newText);
                   showToast("Transcription completed!", "success");
+                  setHasTranscribed(true);
                 } else {
                   showToast("No speech detected", "error");
                 }
@@ -1355,7 +1357,9 @@ export default function HomePage() {
   return (
     <div className="app-container" data-theme={theme}>
       <aside className="sidebar">
-        <h2 className="logo">LOGO</h2>
+        <div className="logo">
+          <img src={logoImage} alt="VoiceScript Logo" className="logo-img" />
+        </div>
         <nav className="sidebar-links">
           <a
             className={!selectedNote ? "active" : ""}
@@ -1375,9 +1379,6 @@ export default function HomePage() {
             </a>
           ))}
         </nav>
-        <button className="new-note-btn" onClick={openNewNoteModal}>
-          <FiPlus /> New Note
-        </button>
       </aside>
 
       <main className="main-content">
@@ -1426,7 +1427,7 @@ export default function HomePage() {
                 className={`category-btn ${selectedCategoryId === category.id ? "active" : ""}`}
                 onClick={() => handleCategoryFilter(category.id)}
                 style={{
-                  borderLeft: `4px solid ${category.color || "#007bff"}`,
+                  borderLeft: `4px solid ${category.color || "#3b57ff"}`,
                   paddingLeft: "12px"
                 }}
               >
@@ -1501,7 +1502,7 @@ export default function HomePage() {
                 alignItems: "center",
                 gap: "8px",
                 padding: "10px 20px",
-                backgroundColor: isUploading ? "#ccc" : "#007bff",
+                backgroundColor: isUploading ? "#ccc" : "#3b57ff",
                 color: "white",
                 border: "none",
                 borderRadius: "5px",
@@ -1557,12 +1558,12 @@ export default function HomePage() {
               <div style={{
                 width: `${uploadPercentage}%`,
                 height: "100%",
-                backgroundColor: "#007bff",
+                backgroundColor: "#3b57ff",
                 borderRadius: "4px",
                 transition: "width 0.3s ease",
                 background: uploadPercentage === 100
                   ? "linear-gradient(90deg, #28a745, #20c997)"
-                  : "linear-gradient(90deg, #007bff, #0056b3)"
+                  : "linear-gradient(90deg, #3b57ff, #6f42c1)"
               }} />
             </div>
             {uploadMetadata && (
@@ -1642,74 +1643,53 @@ export default function HomePage() {
           </div>
         ) : (
           <div className="notes-container">
-            <div 
-              className="notes-section"
-              onDragOver={(e) => handleDragOver(e, "pinned")}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, true, null)}
-              style={{
-                border: dragOverSection === "pinned" ? "2px dashed #007bff" : "2px solid transparent",
-                borderRadius: "8px",
-                padding: dragOverSection === "pinned" ? "10px" : "0",
-                transition: "all 0.2s ease",
-                backgroundColor: dragOverSection === "pinned" ? "rgba(0, 123, 255, 0.05)" : "transparent",
-                minHeight: pinnedNotes.length === 0 ? "100px" : "auto"
-              }}
-            >
-              <h2 className="section-title">📌 Pinned Notes</h2>
-              {pinnedNotes.length === 0 && dragOverSection === "pinned" && (
-                <div style={{ 
-                  textAlign: "center", 
-                  padding: "20px", 
-                  color: "#007bff",
-                  fontStyle: "italic"
-                }}>
-                  Drop note here to pin
+            {/* Pinned Notes Section - only show if there are pinned notes */}
+            {pinnedNotes.length > 0 && (
+              <>
+                <div className="notes-section">
+                  <h2 className="section-title"><FiMapPin style={{ color: "#ffd700", marginRight: "8px" }} /> Pinned Notes</h2>
+                  <div className="notes-grid">
+                    {pinnedNotes.map((note) => (
+                      <div
+                        key={note.id}
+                        className="note-card"
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, note)}
+                        onDragEnd={handleDragEnd}
+                        style={{ 
+                          backgroundColor: note.color || "#ffffff",
+                          cursor: "grab",
+                          opacity: draggedNote?.id === note.id ? 0.5 : 1
+                        }}
+                        onClick={() => handleNoteClick(note)}
+                        onMouseEnter={() => setHoveredNoteId(note.id)}
+                        onMouseLeave={() => setHoveredNoteId(null)}
+                      >
+                        {hoveredNoteId === note.id && (
+                          <div className="quick-actions">
+                            <button onClick={(e) => { e.stopPropagation(); handlePin(note); }} className="quick-action-btn" title={note.pinned ? "Unpin" : "Pin"}>
+                              <FiMapPin style={{ color: note.pinned ? "#ffd700" : "inherit" }} />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleEdit(note); }} className="quick-action-btn" title="Edit">
+                              <FiEdit2 />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleDuplicate(note); }} className="quick-action-btn" title="Duplicate">
+                              <FiCopy />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }} className="quick-action-btn" title="Delete">
+                              <FiTrash2 />
+                            </button>
+                          </div>
+                        )}
+                        <h2>{highlightText(note.title, searchTerm)}</h2>
+                        <p>{note.content ? (note.content.length > 100 ? highlightText(note.content.substring(0, 100) + "...", searchTerm) : highlightText(note.content, searchTerm)) : "No content"}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )}
-              {pinnedNotes.length > 0 && (
-                <div className="notes-grid">
-                  {pinnedNotes.map((note) => (
-                    <div
-                      key={note.id}
-                      className="note-card"
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, note)}
-                      onDragEnd={handleDragEnd}
-                      style={{ 
-                        backgroundColor: note.color || "#ffffff",
-                        cursor: "grab",
-                        opacity: draggedNote?.id === note.id ? 0.5 : 1
-                      }}
-                      onClick={() => handleNoteClick(note)}
-                      onMouseEnter={() => setHoveredNoteId(note.id)}
-                      onMouseLeave={() => setHoveredNoteId(null)}
-                    >
-                      {hoveredNoteId === note.id && (
-                        <div className="quick-actions">
-                          <button onClick={(e) => { e.stopPropagation(); handlePin(note); }} className="quick-action-btn" title={note.pinned ? "Unpin" : "Pin"}>
-                            <FiMapPin style={{ color: note.pinned ? "#ffd700" : "inherit" }} />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleEdit(note); }} className="quick-action-btn" title="Edit">
-                            <FiEdit2 />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDuplicate(note); }} className="quick-action-btn" title="Duplicate">
-                            <FiCopy />
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(note.id); }} className="quick-action-btn" title="Delete">
-                            <FiTrash2 />
-                          </button>
-                        </div>
-                      )}
-                      <h2>{highlightText(note.title, searchTerm)}</h2>
-                      <p>{note.content ? (note.content.length > 100 ? highlightText(note.content.substring(0, 100) + "...", searchTerm) : highlightText(note.content, searchTerm)) : "No content"}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {pinnedNotes.length > 0 && (categorizedNotes.length > 0 || uncategorizedNotes.length > 0) && <div className="section-divider"></div>}
+                {(categorizedNotes.length > 0 || uncategorizedNotes.length > 0) && <div className="section-divider"></div>}
+              </>
+            )}
 
             {(categorizedNotes.length > 0 || categories.some(cat => dragOverSection === "category" && dragOverCategoryId === cat.id)) && (
               <div>
@@ -1729,7 +1709,7 @@ export default function HomePage() {
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, false, category.id)}
                         style={{
-                          border: isDragOver ? "2px dashed #007bff" : "2px solid transparent",
+                          border: isDragOver ? "2px dashed #3b57ff" : "2px solid transparent",
                           borderRadius: "8px",
                           padding: isDragOver ? "10px" : "0",
                           transition: "all 0.2s ease",
@@ -1747,7 +1727,7 @@ export default function HomePage() {
                           padding: "10px",
                           backgroundColor: "var(--bg-secondary)",
                           borderRadius: "8px",
-                          borderLeft: `4px solid ${category.color || "#007bff"}`
+                          borderLeft: `4px solid ${category.color || "#3b57ff"}`
                         }}>
                           {isEditing ? (
                             <input
@@ -1770,7 +1750,7 @@ export default function HomePage() {
                                 padding: "5px 10px",
                                 fontSize: "18px",
                                 fontWeight: "600",
-                                border: "2px solid #007bff",
+                                border: "2px solid #3b57ff",
                                 borderRadius: "4px",
                                 outline: "none"
                               }}
@@ -1786,7 +1766,7 @@ export default function HomePage() {
                                 flex: 1,
                                 cursor: "pointer",
                                 margin: 0,
-                                color: category.color || "#007bff"
+                                color: category.color || "#3b57ff"
                               }}
                             >
                               {category.name}
@@ -1805,8 +1785,8 @@ export default function HomePage() {
                                 width: "30px",
                                 height: "30px",
                                 borderRadius: "50%",
-                                border: `2px solid ${category.color || "#007bff"}`,
-                                backgroundColor: category.color || "#007bff",
+                                border: `2px solid ${category.color || "#3b57ff"}`,
+                                backgroundColor: category.color || "#3b57ff",
                                 cursor: "pointer",
                                 display: "flex",
                                 alignItems: "center",
@@ -1870,7 +1850,7 @@ export default function HomePage() {
                           <div style={{ 
                             textAlign: "center", 
                             padding: "20px", 
-                            color: "#007bff",
+                            color: "#3b57ff",
                             fontStyle: "italic"
                           }}>
                             Drop note here
@@ -1953,7 +1933,7 @@ export default function HomePage() {
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, false, null)}
               style={{
-                border: dragOverSection === "uncategorized" ? "2px dashed #007bff" : "2px solid transparent",
+                border: dragOverSection === "uncategorized" ? "2px dashed #3b57ff" : "2px solid transparent",
                 borderRadius: "8px",
                 padding: dragOverSection === "uncategorized" ? "10px" : "0",
                 transition: "all 0.2s ease",
@@ -1966,13 +1946,27 @@ export default function HomePage() {
                 <div style={{ 
                   textAlign: "center", 
                   padding: "20px", 
-                  color: "#007bff",
+                  color: "#3b57ff",
                   fontStyle: "italic"
                 }}>
                   Drop note here to remove from category
                 </div>
               )}
               <div className="notes-grid">
+                {/* New Note Button - styled like a note card */}
+                <div
+                  className="note-card new-note-card"
+                  onClick={openNewNoteModal}
+                  title="Create a new note"
+                >
+                  <div className="new-note-content">
+                    <div className="new-note-icon">
+                      <FiPlus />
+                    </div>
+                    <span className="new-note-text">New Note</span>
+                  </div>
+                </div>
+
                 {uncategorizedNotes.map(note => (
                   <div
                     key={note.id}
@@ -2066,17 +2060,19 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="feedback-checkbox-container">
-              <label className="feedback-checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={wantToProvideFeedback}
-                  onChange={(e) => setWantToProvideFeedback(e.target.checked)}
-                  className="feedback-checkbox"
-                />
-                <span>I would like to provide feedback to improve VoiceScript</span>
-              </label>
-            </div>
+            {hasTranscribed && (
+              <div className="feedback-checkbox-container">
+                <label className="feedback-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={wantToProvideFeedback}
+                    onChange={(e) => setWantToProvideFeedback(e.target.checked)}
+                    className="feedback-checkbox"
+                  />
+                  <span>I would like to provide feedback to improve VoiceScript</span>
+                </label>
+              </div>
+            )}
 
             {/* Voice Wave Visualization */}
             {(isRecording || isTranscribing) && (
@@ -2097,7 +2093,7 @@ export default function HomePage() {
                           } else if (level > 20) {
                             backgroundColor = '#ffaa00'; // Yellow-orange
                           } else {
-                            backgroundColor = '#007bff'; // Blue
+                            backgroundColor = '#3b57ff'; // Blue
                           }
                           
                           return (
@@ -2121,7 +2117,7 @@ export default function HomePage() {
                             className="voice-wave-bar"
                             style={{
                               height: '8%',
-                              backgroundColor: '#007bff',
+                              backgroundColor: '#3b57ff',
                               opacity: 0.3
                             }}
                           />
